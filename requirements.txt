@@ -1,6 +1,7 @@
 future==1.0.0
 iso8601==2.1.0
+pyserial==3.5
 PyVISA==1.14.1
+PyVISA-py==0.7.2
 PyYAML==6.0.2
-serial==0.0.97
 typing_extensions==4.12.2
