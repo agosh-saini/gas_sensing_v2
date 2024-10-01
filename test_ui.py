@@ -1,149 +1,216 @@
-# gas_ammeter_ui.py
+###########################
+# Author: Agosh Saini - using using GPT-1o-preview model
+# Contact: contact@agoshsaini.com
+# Date: 2024-OCT-01
+###########################
 
+########################### IMPORTS ###########################
 import tkinter as tk
-from tkinter import messagebox
 from tkinter import ttk
+import threading
+import time
+import csv
+import datetime
+import os
 
-# Import the mfc and ampmeter modules
-import mfc
-import ampmeter
+# Import the Keithley and MFC classes
+from ampmeter import Keithley2450
+from mfc import MFCDevice
 
-class GasAmmeterControlUI:
-    def __init__(self, master):
-        self.master = master
-        master.title("Gas Flow Meter and Ammeter Control")
+########################### INITIALIZE ###########################
+# Initialize the Keithley Ammeter
+resource_address = 'USB0::0x05E6::0x2450::04502549::INSTR'
+keithley = Keithley2450(resource_address)
 
-        # Create the main frame
-        self.main_frame = ttk.Frame(master, padding="10")
-        self.main_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+# Initialize MFC Devices
+# We'll store them in a dictionary for easy access
+mfc_devices = {
+    'MFC 1': MFCDevice('COM6'),
+    'MFC 2': MFCDevice('COM7'),
+    'MFC 3': MFCDevice('COM8'),
+}
 
-        # Gas Flow Meter Section
-        self.create_gas_flow_meter_section()
+# Variables to control the recording thread
+recording = False
+stop_time = None
 
-        # Ammeter Section
-        self.create_ammeter_section()
+# Data lists for logging
+data_records = []
 
-        # Status Message Section
-        self.create_status_section()
-
-    def create_gas_flow_meter_section(self):
-        # Section Label
-        gas_label = ttk.Label(self.main_frame, text="Gas Flow Meter Control", font=('Helvetica', 14, 'bold'))
-        gas_label.grid(row=0, column=0, columnspan=3, pady=(0, 10), sticky=tk.W)
-
-        # Flow Rate Input
-        flow_rate_label = ttk.Label(self.main_frame, text="Set Flow Rate (sccm):")
-        flow_rate_label.grid(row=1, column=0, sticky=tk.E)
-        self.flow_rate_entry = ttk.Entry(self.main_frame, width=15)
-        self.flow_rate_entry.grid(row=1, column=1, padx=5, pady=5, sticky=tk.W)
-
-        # Set Flow Rate Button
-        set_flow_button = ttk.Button(self.main_frame, text="Set Flow Rate", command=self.set_flow_rate)
-        set_flow_button.grid(row=1, column=2, padx=5, pady=5, sticky=tk.W)
-
-        # Stop Gas Flow Button
-        stop_flow_button = ttk.Button(self.main_frame, text="Stop Gas Flow", command=self.stop_gas_flow)
-        stop_flow_button.grid(row=1, column=3, padx=5, pady=5, sticky=tk.W)
-
-    def create_ammeter_section(self):
-        # Section Label
-        ammeter_label = ttk.Label(self.main_frame, text="Ammeter Control", font=('Helvetica', 14, 'bold'))
-        ammeter_label.grid(row=2, column=0, columnspan=3, pady=(20, 10), sticky=tk.W)
-
-        # Current Value Input
-        current_label = ttk.Label(self.main_frame, text="Set Amp Value (A):")
-        current_label.grid(row=3, column=0, sticky=tk.E)
-        self.current_entry = ttk.Entry(self.main_frame, width=15)
-        self.current_entry.grid(row=3, column=1, padx=5, pady=5, sticky=tk.W)
-
-        # Set Current Button
-        set_current_button = ttk.Button(self.main_frame, text="Set Amp Value", command=self.set_current)
-        set_current_button.grid(row=3, column=2, padx=5, pady=5, sticky=tk.W)
-
-        # Stop Current Flow Button
-        stop_current_button = ttk.Button(self.main_frame, text="Stop Current", command=self.stop_current_flow)
-        stop_current_button.grid(row=3, column=3, padx=5, pady=5, sticky=tk.W)
-
-    def create_status_section(self):
-        # Status Label
-        self.status_label = ttk.Label(self.main_frame, text="", font=('Helvetica', 10))
-        self.status_label.grid(row=4, column=0, columnspan=4, pady=(20, 0), sticky=tk.W)
-
-    def set_flow_rate(self):
+########################### FUNCTIONS ###########################
+# Function to handle data recording from Keithley
+def record_data():
+    global recording, stop_time
+    start_time = time.time()
+    while recording:
+        current_time = time.time()
+        elapsed_time = current_time - start_time
+        # Check if we have reached the stop time
+        if stop_time is not None and elapsed_time >= stop_time:
+            recording = False
+            start_button.config(text="Start")
+            break
         try:
-            flow_rate_str = self.flow_rate_entry.get()
-            if not flow_rate_str:
-                raise ValueError("Flow rate cannot be empty.")
-            flow_rate = float(flow_rate_str)
-            if flow_rate < 0:
-                raise ValueError("Flow rate must be a positive number.")
-
-            # Set the flow rate using the mfc module
-            mfc.set_flow_rate(flow_rate)
-
-            # Update status message
-            self.status_label.config(text="Flow rate set successfully.", foreground='green')
-        except ValueError as ve:
-            self.status_label.config(text=f"Error: {ve}", foreground='red')
-        except ConnectionError as ce:
-            self.status_label.config(text=f"Error: {ce}", foreground='red')
-            messagebox.showerror("Device Communication Error", f"Failed to communicate with the gas flow meter.\n\n{ce}")
+            # Measure current from the Keithley device
+            current = keithley.measure_current()
+            # Get flow rates from MFCs
+            flow_rates = {}
+            for mfc_name, mfc in mfc_devices.items():
+                percent_sp, setpoint_value, units = mfc.read_setpoint()
+                flow_rates[mfc_name] = setpoint_value
+            # Get timestamp
+            timestamp = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            # Update the data label in the UI
+            data_label.config(text=f"Current Data: {current} A")
+            # Save data to records
+            record = {
+                'Time': timestamp,
+                'Elapsed Time (s)': round(elapsed_time, 2),
+                'Current (A)': current,
+                'MFC 1 Flow Rate': flow_rates['MFC 1'],
+                'MFC 2 Flow Rate': flow_rates['MFC 2'],
+                'MFC 3 Flow Rate': flow_rates['MFC 3'],
+            }
+            data_records.append(record)
         except Exception as e:
-            self.status_label.config(text=f"Unexpected Error: {e}", foreground='red')
-            messagebox.showerror("Unexpected Error", f"An unexpected error occurred:\n\n{e}")
+            data_label.config(text=f"Error reading data: {e}")
+        time.sleep(1)  # Adjust the interval as needed
 
-    def set_current(self):
-        try:
-            current_str = self.current_entry.get()
-            if not current_str:
-                raise ValueError("Current value cannot be empty.")
-            current_value = float(current_str)
-            if current_value < 0:
-                raise ValueError("Current value must be a positive number.")
+    # After recording stops, save data to CSV
+    save_data_to_csv()
 
-            # Set the current using the ampmeter module
-            ampmeter.set_current(current_value)
+# Function to save data to a CSV file
+def save_data_to_csv():
+    # Create a directory for data logs if it doesn't exist
+    if not os.path.exists('data_logs'):
+        os.makedirs('data_logs')
+    # Generate filename with timestamp
+    filename = datetime.datetime.now().strftime('data_logs/data_log_%Y%m%d_%H%M%S.csv')
+    fieldnames = ['Time', 'Elapsed Time (s)', 'Current (A)', 'MFC 1 Flow Rate', 'MFC 2 Flow Rate', 'MFC 3 Flow Rate']
+    try:
+        with open(filename, 'w', newline='') as csvfile:
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+            writer.writeheader()
+            for record in data_records:
+                writer.writerow(record)
+        data_label.config(text=f"Data saved to {filename}")
+    except Exception as e:
+        data_label.config(text=f"Error saving data: {e}")
 
-            # Update status message
-            self.status_label.config(text="Current set successfully.", foreground='green')
-        except ValueError as ve:
-            self.status_label.config(text=f"Error: {ve}", foreground='red')
-        except ConnectionError as ce:
-            self.status_label.config(text=f"Error: {ce}", foreground='red')
-            messagebox.showerror("Device Communication Error", f"Failed to communicate with the ammeter.\n\n{ce}")
-        except Exception as e:
-            self.status_label.config(text=f"Unexpected Error: {e}", foreground='red')
-            messagebox.showerror("Unexpected Error", f"An unexpected error occurred:\n\n{e}")
+# Function to start/stop recording
+def toggle_recording():
+    global recording, stop_time, data_records
+    if not recording:
+        recording = True
+        data_records = []  # Clear previous data
+        # Get the duration from the UI
+        duration_str = duration_entry.get()
+        if duration_str:
+            try:
+                duration = float(duration_str)
+                stop_time = duration
+            except ValueError:
+                data_label.config(text="Invalid duration. Please enter a number.")
+                return
+        else:
+            stop_time = None  # Run indefinitely until stopped
+        start_button.config(text="Stop")
+        threading.Thread(target=record_data, daemon=True).start()
+    else:
+        recording = False
+        start_button.config(text="Start")
+        save_data_to_csv()
 
-    def stop_gas_flow(self):
-        try:
-            # Set the flow rate to zero
-            mfc.set_flow_rate(0.0)
+# Function to set gas flow for each MFC
+def set_mfc_flow(mfc_name, flow_var):
+    try:
+        mfc = mfc_devices[mfc_name]
+        flow_rate = flow_var.get()
+        # Set the flow rate (assuming units code 57 for percent)
+        mfc.write_setpoint(flow_rate, units=57)
+        # Update status label
+        status_labels[mfc_name].config(text=f"Flow Rate Set to: {flow_rate}%")
+    except Exception as e:
+        status_labels[mfc_name].config(text=f"Error: {e}")
 
-            # Update status message
-            self.status_label.config(text="Gas flow stopped successfully.", foreground='green')
-        except ConnectionError as ce:
-            self.status_label.config(text=f"Error: {ce}", foreground='red')
-            messagebox.showerror("Device Communication Error", f"Failed to communicate with the gas flow meter.\n\n{ce}")
-        except Exception as e:
-            self.status_label.config(text=f"Unexpected Error: {e}", foreground='red')
-            messagebox.showerror("Unexpected Error", f"An unexpected error occurred:\n\n{e}")
+# Function to update COM port for each MFC
+def update_mfc_com(mfc_name, com_var):
+    try:
+        com_port = com_var.get()
+        # Close the current connection
+        mfc_devices[mfc_name].close()
+        # Re-initialize the MFCDevice with the new COM port
+        mfc_devices[mfc_name] = MFCDevice(com_port)
+        # Update status label
+        status_labels[mfc_name].config(text=f"Using COM Port: {com_port}")
+    except Exception as e:
+        status_labels[mfc_name].config(text=f"Error: {e}")
 
-    def stop_current_flow(self):
-        try:
-            # Set the current to zero
-            ampmeter.set_current(0.0)
+########################### UI SETUP ###########################
+# Create the main application window
+root = tk.Tk()
+root.title("Keithley Data Recorder and MFC Control")
+root.geometry("800x600")
 
-            # Update status message
-            self.status_label.config(text="Current stopped successfully.", foreground='green')
-        except ConnectionError as ce:
-            self.status_label.config(text=f"Error: {ce}", foreground='red')
-            messagebox.showerror("Device Communication Error", f"Failed to communicate with the ammeter.\n\n{ce}")
-        except Exception as e:
-            self.status_label.config(text=f"Unexpected Error: {e}", foreground='red')
-            messagebox.showerror("Unexpected Error", f"An unexpected error occurred:\n\n{e}")
+# Keithley Data Section
+data_frame = ttk.Frame(root)
+data_frame.pack(pady=10)
 
-if __name__ == "__main__":
-    root = tk.Tk()
-    app = GasAmmeterControlUI(root)
+data_label = ttk.Label(data_frame, text="Current Data: N/A")
+data_label.pack(side="left", padx=5)
+
+start_button = ttk.Button(data_frame, text="Start", command=toggle_recording)
+start_button.pack(side="left", padx=5)
+
+duration_label = ttk.Label(data_frame, text="Duration (s):")
+duration_label.pack(side="left", padx=5)
+
+duration_entry = ttk.Entry(data_frame, width=10)
+duration_entry.pack(side="left", padx=5)
+duration_entry.insert(0, "60")  # Default duration
+
+# MFC Control Section
+status_labels = {}
+flow_vars = {}  # To keep track of flow variables for each MFC
+
+for i, mfc_name in enumerate(['MFC 1', 'MFC 2', 'MFC 3'], start=1):
+    frame = ttk.LabelFrame(root, text=mfc_name)
+    frame.pack(fill="x", padx=5, pady=5)
+    
+    flow_label = ttk.Label(frame, text="Set Flow Rate (%):")
+    flow_label.pack(side="left", padx=5)
+    
+    flow_var = tk.DoubleVar(value=0)
+    flow_vars[mfc_name] = flow_var  # Store the variable
+    
+    flow_slider = ttk.Scale(frame, from_=0, to=100, orient="horizontal", variable=flow_var)
+    flow_slider.pack(side="left", padx=5)
+    
+    flow_button = ttk.Button(frame, text="Set", command=lambda mfc_name=mfc_name, flow_var=flow_var: set_mfc_flow(mfc_name, flow_var))
+    flow_button.pack(side="left", padx=5)
+    
+    com_label = ttk.Label(frame, text="COM Port:")
+    com_label.pack(side="left", padx=5)
+    
+    com_var = tk.StringVar(value=f'COM{6 + i - 1}')  # Default COM ports COM6, COM7, COM8
+    com_dropdown = ttk.Combobox(frame, textvariable=com_var, values=['COM1', 'COM2', 'COM3', 'COM4', 'COM5', 'COM6', 'COM7', 'COM8', 'COM9'])
+    com_dropdown.pack(side="left", padx=5)
+    
+    com_button = ttk.Button(frame, text="Update COM", command=lambda mfc_name=mfc_name, com_var=com_var: update_mfc_com(mfc_name, com_var))
+    com_button.pack(side="left", padx=5)
+    
+    status_label = ttk.Label(frame, text=f"Using COM Port: {com_var.get()}, Flow Rate: N/A")
+    status_label.pack(side="left", padx=5)
+    
+    status_labels[mfc_name] = status_label
+
+########################## MAIN LOOP ##########################
+try:
     root.mainloop()
+except KeyboardInterrupt:
+    pass
+finally:
+    # Ensure devices are closed when the application exits
+    keithley.close()
+    for mfc in mfc_devices.values():
+        mfc.close()

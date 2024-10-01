@@ -1,238 +1,283 @@
 ###########################
-# Author: Agosh Saini - using GPT-1o-preview model
+# Author: Agosh Saini - using using GPT-1o-preview model
 # Contact: contact@agoshsaini.com
-# Date: 2024-SPET-12
+# Date: 2024-OCT-01
 ###########################
 
 ########################### IMPORTS ###########################
-import serial
-import struct
-from typing import Optional
-
+import time
+from sprotocol import device
 
 ########################### CLASS DEFINITION ###########################
-class MassFlowController:
+class MFCDevice:
     """
-    A class to control a mass flow controller (MFC) via RS485 communication interface.
+    A class to represent and control a Mass Flow Controller (MFC) device using the s-protocol.
 
     Attributes:
-        port (str): Serial port to which the MFC is connected.
-        address (int): Device address on the RS485 bus.
-        max_sccm (float): Maximum flow rate in SCCM.
-        ser (Optional[serial.Serial]): Serial connection object.
+        mfc (device.mfc): The MFC device object from the sprotocol library.
     """
 
-    def __init__(self, port: str, address: int = 1, max_sccm: Optional[float] = None):
+    def __init__(self, com_port, baudrate=19200, timeout=0.1):
         """
-        Initialize the MassFlowController.
+        Initialize the MFC device by establishing a connection and retrieving the device address.
 
-        Args:
-            port (str): Serial port (e.g., 'COM3', '/dev/ttyUSB0').
-            address (int): Device address on the RS485 bus (default is 1).
-            max_sccm (float, optional): Maximum flow rate in SCCM. If None, it will be read from the device.
+        Parameters:
+            com_port (str): The COM port to which the MFC is connected (e.g., 'COM3').
+            baudrate (int, optional): The baud rate for serial communication. Default is 19200.
+            timeout (float, optional): The timeout for serial communication in seconds. Default is 0.1.
         """
-        self.port = port
-        self.address = address
-        self.max_sccm = max_sccm
-        self.ser: Optional[serial.Serial] = None
+        try:
+            # Initialize the MFC device from the sprotocol library
+            self.mfc = device.mfc(com_port, baudrate, timeout)
+            # Get the device address to enable communication
+            self.mfc.get_address()
+        except Exception as e:
+            print(f"Error initializing device on {com_port}: {e}")
+            # Perform emergency stop as a backup
+            self.emergency_stop()
+            raise
 
-    def connect(self) -> None:
+    def write_setpoint(self, setpoint_value, units=57):
         """
-        Open the serial connection to the MFC and read the maximum flow rate if not provided.
-        """
-        self.ser = serial.Serial(port=self.port, baudrate=19200, timeout=1)
-        print(f"Connected to {self.port} at 19200 baud.")
-        if self.max_sccm is None:
-            self.max_sccm = self.read_full_scale()
-            print(f"Max flow rate read from device: {self.max_sccm} SCCM")
+        Write the setpoint value to the MFC.
 
-    def disconnect(self) -> None:
+        Parameters:
+            setpoint_value (float): The desired setpoint value.
+            units (int, optional): The units code. Default is 57 (percent of flow range).
+
+        Returns:
+            tuple: Contains the percent setpoint, setpoint float value, and setpoint units.
         """
-        Close the serial connection.
+        try:
+            return self.mfc.write_setpoint(setpoint_value, units)
+        except Exception as e:
+            print(f"Error writing setpoint: {e}")
+            # Perform emergency stop as a backup
+            self.emergency_stop()
+            raise
+
+    def read_setpoint(self):
         """
-        if self.ser and self.ser.is_open:
-            self.ser.close()
+        Read the current setpoint from the MFC.
+
+        Returns:
+            tuple: Contains the percent setpoint, setpoint float value, and setpoint units.
+        """
+        try:
+            return self.mfc.read_setpoint()
+        except Exception as e:
+            print(f"Error reading setpoint: {e}")
+            # Perform emergency stop as a backup
+            self.emergency_stop()
+            raise
+
+    def write_flow_unit(self, flow_ref, flow_unit):
+        """
+        Set the flow units and flow reference of the MFC.
+
+        Parameters:
+            flow_ref (int): The flow reference code (e.g., 0 for Normal, 1 for Standard).
+            flow_unit (int): The flow unit code (e.g., 17 for Litres/minute).
+
+        Returns:
+            tuple: Contains the flow reference string and flow unit string.
+        """
+        try:
+            return self.mfc.write_flow_unit(flow_ref, flow_unit)
+        except Exception as e:
+            print(f"Error writing flow unit: {e}")
+            # Perform emergency stop as a backup
+            self.emergency_stop()
+            raise
+
+    def read_flow_unit(self):
+        """
+        Read the current flow units and flow reference of the MFC.
+
+        Returns:
+            tuple: Contains the flow reference string and flow unit string.
+        """
+        try:
+            # Command 196 without data reads the current flow units and reference
+            self.mfc.write_command(196)
+            time.sleep(0.2)
+            response = self.mfc.read_command()
+            data_bytes = response[3]
+            flow_ref_code = data_bytes[0]
+            flow_unit_code = data_bytes[1]
+            flow_ref_str = self.mfc.units_from_flow_ref(flow_ref_code)
+            flow_unit_str = self.mfc.units_from_int_flow(flow_unit_code)
+            return flow_ref_str, flow_unit_str
+        except Exception as e:
+            print(f"Error reading flow unit: {e}")
+            # Perform emergency stop as a backup
+            self.emergency_stop()
+            raise
+
+    def read_flow_reference(self):
+        """
+        Read the flow reference from the device.
+
+        Returns:
+            str: The flow reference as a string (e.g., 'Normal', 'Standard').
+        """
+        try:
+            flow_ref_str, _ = self.read_flow_unit()
+            return flow_ref_str
+        except Exception as e:
+            print(f"Error reading flow reference: {e}")
+            # Perform emergency stop as a backup
+            self.emergency_stop()
+            raise
+
+    def write_flow_reference(self, flow_ref):
+        """
+        Write the flow reference to the device.
+
+        Parameters:
+            flow_ref (int): The flow reference code (e.g., 0 for Normal, 1 for Standard).
+
+        Returns:
+            str: The updated flow reference as a string.
+        """
+        try:
+            # Read current flow unit to avoid changing it
+            _, flow_unit_str = self.read_flow_unit()
+            flow_unit_code = None
+            # Find the unit code from the unit string
+            for code, unit in self.mfc.flow_units_table.items():
+                if unit == flow_unit_str:
+                    flow_unit_code = code
+                    break
+            if flow_unit_code is None:
+                raise ValueError("Current flow unit not recognized.")
+            # Write the new flow reference with the existing flow unit
+            self.write_flow_unit(flow_ref, flow_unit_code)
+            flow_ref_str = self.mfc.units_from_flow_ref(flow_ref)
+            return flow_ref_str
+        except Exception as e:
+            print(f"Error writing flow reference: {e}")
+            # Perform emergency stop as a backup
+            self.emergency_stop()
+            raise
+
+    def emergency_stop(self):
+        """
+        Emergency stop function that sets the setpoint to zero.
+        """
+        try:
+            self.mfc.write_setpoint(0.0)
+            print("Emergency stop activated: Setpoint set to zero.")
+        except Exception as e:
+            print(f"Error during emergency stop: {e}")
+
+    def close(self):
+        """
+        Close the serial connection to the device.
+        """
+        if self.mfc.ser and self.mfc.ser.is_open:
+            self.mfc.ser.close()
             print("Serial connection closed.")
-            self.ser = None
 
-    def set_flow_rate(self, flow_rate: float) -> None:
+class MFCController:
+    """
+    A controller class to manage multiple MFC devices.
+
+    Attributes:
+        devices (list): A list of MFCDevice instances.
+    """
+
+    def __init__(self):
         """
-        Set the flow rate in SCCM.
-
-        Args:
-            flow_rate (float): Desired flow rate in SCCM.
-
-        Raises:
-            ValueError: If flow_rate is out of range.
-            IOError: If communication fails.
+        Initialize the MFCController with an empty list of devices.
         """
-        if not 0 <= flow_rate <= self.max_sccm:
-            raise ValueError(f"Flow rate must be between 0 and {self.max_sccm} SCCM.")
+        self.devices = []
 
-        # Convert flow rate to percentage of full scale
-        flow_percentage = (flow_rate / self.max_sccm) * 100.0
-
-        # Encode flow_percentage as 32-bit IEEE 754 float in big-endian
-        data_bytes = struct.pack('>f', flow_percentage)
-
-        command_number = 236  # Command to set flow rate
-
-        # Send command
-        self._send_command(command_number, data_bytes)
-        print(f"Flow rate set to {flow_rate} SCCM ({flow_percentage:.2f}% of full scale).")
-
-    def close(self) -> None:
+    def add_device(self, com_port, baudrate=19200, timeout=0.1):
         """
-        Set the flow rate to 0 SCCM (close the flow).
-        """
-        self.set_flow_rate(0.0)
-        print("Flow closed (set to 0 SCCM).")
+        Add an MFC device to the controller.
 
-    def read_flow_rate(self) -> float:
-        """
-        Read the current flow rate from the MFC.
+        Parameters:
+            com_port (str): The COM port of the MFC device (e.g., 'COM3').
+            baudrate (int, optional): The baud rate for serial communication. Default is 19200.
+            timeout (float, optional): The timeout for serial communication in seconds. Default is 0.1.
 
         Returns:
-            float: Current flow rate in SCCM.
-
-        Raises:
-            IOError: If communication fails or invalid response.
+            MFCDevice: The added MFC device instance.
         """
-        command_number = 1
-        data_bytes = self._send_command(command_number)
-        if len(data_bytes) != 4:
-            raise IOError("Invalid data length in flow rate response.")
+        try:
+            mfc_device = MFCDevice(com_port, baudrate, timeout)
+            self.devices.append(mfc_device)
+            print(f"Device added on {com_port}")
+            return mfc_device
+        except Exception as e:
+            print(f"Error adding device on {com_port}: {e}")
+            # Perform emergency stop as a backup
+            self.emergency_stop_all()
+            raise
 
-        # Data bytes are a 32-bit IEEE 754 float representing percentage
-        flow_percentage = struct.unpack('>f', data_bytes)[0]
-        # Convert percentage to SCCM
-        flow_rate = (flow_percentage / 100.0) * self.max_sccm
-        print(f"Current flow rate: {flow_rate:.2f} SCCM ({flow_percentage:.2f}% of full scale).")
-        return flow_rate
-
-    def read_full_scale(self) -> float:
+    def emergency_stop_all(self):
         """
-        Read the full-scale flow rate from the MFC.
-
-        Returns:
-            float: Full-scale flow rate in SCCM.
-
-        Raises:
-            IOError: If communication fails or invalid response.
+        Emergency stop all connected MFC devices by setting their setpoints to zero.
         """
-        command_number = 152
-        data_bytes = self._send_command(command_number)
-        if len(data_bytes) != 4:
-            raise IOError("Invalid data length in full-scale response.")
+        print("Performing emergency stop on all devices.")
+        for device in self.devices:
+            device.emergency_stop()
 
-        # Data bytes are a 32-bit IEEE 754 float
-        full_scale_value = struct.unpack('>f', data_bytes)[0]
-        return full_scale_value
-
-    def _calculate_checksum(self, data: bytes) -> int:
+    def close_all(self):
         """
-        Calculate the checksum for a given data sequence.
-
-        Args:
-            data (bytes): Data sequence to calculate checksum.
-
-        Returns:
-            int: Calculated checksum.
+        Close all serial connections to the MFC devices.
         """
-        checksum = 0
-        for b in data:
-            checksum ^= b
-        return checksum
+        for device in self.devices:
+            device.close()
+        print("All devices have been disconnected.")
 
-    def _send_command(self, command: int, data: Optional[bytes] = None) -> bytes:
-        """
-        Send a command to the MFC and read the response.
-
-        Args:
-            command (int): Command number.
-            data (bytes, optional): Data bytes to send with the command.
-
-        Returns:
-            bytes: Data bytes from the response.
-
-        Raises:
-            IOError: If communication fails or checksum is invalid.
-        """
-        if not self.ser or not self.ser.is_open:
-            raise IOError("Serial port is not open.")
-
-        # Construct the command frame
-        frame = bytearray()
-        # Preamble: 5 bytes of 0xFF
-        frame.extend([0xFF] * 5)
-        # Start character: 0x02 (master to slave)
-        frame.append(0x02)
-        # Address: single byte
-        frame.append(self.address & 0xFF)
-        # Command byte
-        frame.append(command & 0xFF)
-        # Data bytes
-        if data:
-            frame.extend(data)
-        # Calculate checksum
-        checksum_data = frame[5:]  # From start character onwards
-        checksum = self._calculate_checksum(checksum_data)
-        # Append checksum
-        frame.append(checksum & 0xFF)
-
-        # Send the command
-        self.ser.write(frame)
-        print(f"Command {command} sent to device at address {self.address}.")
-
-        # Read response
-        response = self.ser.read(256)  # Read up to 256 bytes or until timeout
-        if not response:
-            raise IOError("No response received from device.")
-
-        # Find the start of the response frame (0x06 for slave-to-master message)
-        start_index = response.find(b'\x06')
-        if start_index == -1:
-            raise IOError("Invalid response: start character not found.")
-
-        # Response frame starts from start_index
-        response_frame = response[start_index:]
-
-        # Extract address, status, data, checksum
-        if len(response_frame) < 5:
-            raise IOError("Invalid response: too short.")
-
-        # Extract fields
-        start_char = response_frame[0]
-        address = response_frame[1]
-        status = response_frame[2]
-        data_bytes = response_frame[3:-1]
-        checksum_received = response_frame[-1]
-
-        # Calculate checksum
-        checksum_data = response_frame[:-1]
-        checksum_calculated = self._calculate_checksum(checksum_data)
-
-        if checksum_received != (checksum_calculated & 0xFF):
-            raise IOError("Invalid checksum in response.")
-
-        if status != 0x00:
-            raise IOError(f"Device returned error status: {status}")
-
-        print(f"Response received for command {command}.")
-
-        return data_bytes
-
-
-########################### MAIN ###########################
+########################### MAIN FUNCTION ###########################
 if __name__ == "__main__":
-    # Replace 'COM3' with your serial port
-    mfc = MassFlowController(port='COM3')
+    """
+    Example main function demonstrating how to use the MFCDevice and MFCController classes.
+    """
     try:
-        mfc.connect()
-        mfc.set_flow_rate(500.0)  # Set flow rate to 500 SCCM
-        current_flow = mfc.read_flow_rate()
-        mfc.close()  # Close the flow
+        # Create an MFCController instance
+        controller = MFCController()
+
+        # Add MFC devices (replace 'COM3' and 'COM4' with your actual COM ports)
+        mfc1 = controller.add_device('COM3')
+        mfc2 = controller.add_device('COM4')
+
+        # Write setpoint to MFC1 (e.g., set to 50% of full scale)
+        percent_sp, setpoint_value, units = mfc1.write_setpoint(50.0)
+        print(f"MFC1 Setpoint set to {percent_sp}% ({setpoint_value} {units})")
+
+        # Read setpoint from MFC2
+        percent_sp, setpoint_value, units = mfc2.read_setpoint()
+        print(f"MFC2 Current Setpoint: {percent_sp}% ({setpoint_value} {units})")
+
+        # Change flow units and reference of MFC1 (e.g., set to Standard Litres/minute)
+        flow_ref_str, flow_unit_str = mfc1.write_flow_unit(flow_ref=1, flow_unit=17)
+        print(f"MFC1 Units set to {flow_ref_str} {flow_unit_str}")
+
+        # Read flow units and reference of MFC1
+        flow_ref_str, flow_unit_str = mfc1.read_flow_unit()
+        print(f"MFC1 Current Units: {flow_ref_str} {flow_unit_str}")
+
+        # Read flow reference of MFC1
+        flow_ref = mfc1.read_flow_reference()
+        print(f"MFC1 Flow Reference: {flow_ref}")
+
+        # Write new flow reference to MFC1 (e.g., set to Normal)
+        flow_ref_str = mfc1.write_flow_reference(flow_ref=0)
+        print(f"MFC1 Flow Reference updated to: {flow_ref_str}")
+
+        # Emergency stop all devices
+        controller.emergency_stop_all()
+        print("Emergency stop activated for all devices.")
+
     except Exception as e:
-        print(f"Error: {e}")
+        print(f"An unexpected error occurred: {e}")
+        # Perform emergency stop as a backup
+        controller.emergency_stop_all()
     finally:
-        mfc.disconnect()
+        # Close all connections when done
+        controller.close_all()
+        print("All devices have been disconnected.")

@@ -1,7 +1,7 @@
 ###########################
 # Author: Agosh Saini - using using GPT-1o-preview model
 # Contact: contact@agoshsaini.com
-# Date: 2024-SPET-12
+# Date: 2024-OCT-01
 ###########################
 
 ########################### IMPORTS ###########################
@@ -80,16 +80,22 @@ class Keithley2450:
 
     def measure_current(self) -> float:
         """
-        Measure the current.
+        Measure the current from the instrument.
 
         Returns:
             float: The measured current in amperes.
         """
-        # Configure the measurement function to current
-        self.instrument.write('MEAS:CURR?')
-        # Read and return the measurement
+        # Send the command to read the current
+        self.instrument.write('READ?')
+        # Read the response
         response = self.instrument.read()
-        return float(response)
+        # Parse the response to extract the current value
+        data = response.strip().split(',')
+        # Extract the current value (adjust the index if necessary)
+        # Assuming the current value is the second element in the response
+        current = float(data[1])
+        return current
+
 
     def measure_resistance(self) -> float:
         """
@@ -137,7 +143,7 @@ class Keithley2450:
 
 ########################### MAIN FUNCTION ###########################
 # Specify the resource address of your instrument
-resource_address = 'USB0::0x05E6::2450::INSTR'
+resource_address = 'USB0::0x05E6::0x2450::04502549::INSTR'
 
 # Create an instance of the Keithley2450 class
 keithley = Keithley2450(resource_address)
