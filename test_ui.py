@@ -25,9 +25,9 @@ keithley = Keithley2450(resource_address)
 # Initialize MFC Devices
 # We'll store them in a dictionary for easy access
 mfc_devices = {
-    'MFC 1': MFCDevice('COM6'),
-    'MFC 2': MFCDevice('COM7'),
-    'MFC 3': MFCDevice('COM8'),
+    'MFC 1': MFCDevice('COM3'),
+    'MFC 2': MFCDevice('COM4'),
+    'MFC 3': MFCDevice('COM5'),
 }
 
 # Variables to control the recording thread
