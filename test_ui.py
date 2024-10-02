@@ -1,6 +1,6 @@
 ###########################
-# Author: [Your Name]
-# Date: [Today's Date]
+# Author: Agosh Saini - with GPT-1o-preview
+# Date: 2024-10-12
 ###########################
 
 ########################### IMPORTS ###########################
