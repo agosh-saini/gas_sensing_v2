@@ -27,34 +27,42 @@ matplotlib.use("TkAgg")
 # Create the main application window
 root = tk.Tk()
 root.title("Keithley Data Recorder and MFC Control")
-root.geometry("1200x800")
+root.geometry("1200x900")
 
 # Initialize cycle parameters
 cycle_vars = {
     'Pre-Cycle': {
-        'duration': tk.StringVar(value='10'),
-        'mfc_rates': {
-            'MFC 1': tk.StringVar(value='10'),
-            'MFC 2': tk.StringVar(value='20'),
-            'MFC 3': tk.StringVar(value='30'),
-        },
-    },
-    'Run-On Cycle': {
-        'duration': tk.StringVar(value='20'),
-        'mfc_rates': {
-            'MFC 1': tk.StringVar(value='40'),
-            'MFC 2': tk.StringVar(value='50'),
-            'MFC 3': tk.StringVar(value='60'),
-        },
-    },
-    'Off Cycle': {
-        'duration': tk.StringVar(value='10'),
+        'duration': tk.StringVar(value='0'),
         'mfc_rates': {
             'MFC 1': tk.StringVar(value='0'),
             'MFC 2': tk.StringVar(value='0'),
             'MFC 3': tk.StringVar(value='0'),
         },
     },
+    'Run-On Cycle': {
+        'duration': tk.StringVar(value='0'),
+        'mfc_rates': {
+            'MFC 1': tk.StringVar(value='0'),
+            'MFC 2': tk.StringVar(value='0'),
+            'MFC 3': tk.StringVar(value='0'),
+        },
+    },
+    'Off Cycle': {
+        'duration': tk.StringVar(value='0'),
+        'mfc_rates': {
+            'MFC 1': tk.StringVar(value='0'),
+            'MFC 2': tk.StringVar(value='0'),
+            'MFC 3': tk.StringVar(value='0'),
+        },
+    },
+}
+
+# User-defined parameters
+num_repeats_var = tk.StringVar(value='1')  # Number of repeats
+mfc_adjustments = {
+    'MFC 1': tk.StringVar(value='0'),
+    'MFC 2': tk.StringVar(value='0'),
+    'MFC 3': tk.StringVar(value='0'),
 }
 
 # Initialize the Keithley Ammeter
@@ -84,7 +92,7 @@ def record_data():
     start_time = time.time()
 
     # Build cycles from user input
-    cycles = []
+    base_cycles = []
     for cycle_name in ['Pre-Cycle', 'Run-On Cycle', 'Off Cycle']:
         duration_str = cycle_vars[cycle_name]['duration'].get()
         try:
@@ -101,11 +109,48 @@ def record_data():
                 data_label.config(text=f"Invalid rate for {mfc_name} in {cycle_name}. Using default value of 0.")
                 rate = 0
             mfc_rates[mfc_name] = rate
-        cycles.append({
+        base_cycles.append({
             'name': cycle_name,
             'duration': duration,
             'mfc_rates': mfc_rates,
         })
+
+    # Get number of repeats
+    try:
+        num_repeats = int(num_repeats_var.get())
+        if num_repeats < 1:
+            raise ValueError
+    except ValueError:
+        data_label.config(text=f"Invalid number of repeats. Using default value of 1.")
+        num_repeats = 1
+
+    # Get MFC adjustment values
+    try:
+        mfc_adjustment_values = {mfc_name: float(adj_var.get()) for mfc_name, adj_var in mfc_adjustments.items()}
+    except ValueError:
+        data_label.config(text="Invalid MFC adjustment values. Using default value of 0.")
+        mfc_adjustment_values = {mfc_name: 0 for mfc_name in mfc_devices.keys()}
+
+    # Build full cycle list with repeats and adjustments
+    cycles = []
+    for repeat in range(num_repeats):
+        adjustment_multiplier = repeat  # Adjustments increase each repeat
+        for base_cycle in base_cycles:
+            adjusted_mfc_rates = base_cycle['mfc_rates'].copy()
+            if base_cycle['name'] == 'Run-On Cycle':
+                # Apply adjustments only to Run-On Cycle
+                for mfc_name in ['MFC 1', 'MFC 2', 'MFC 3']:
+                    base_rate = base_cycle['mfc_rates'][mfc_name]
+                    adjustment = mfc_adjustment_values[mfc_name] * adjustment_multiplier
+                    adjusted_rate = base_rate + adjustment
+                    adjusted_mfc_rates[mfc_name] = adjusted_rate
+            # Else, keep the mfc_rates as they are for Pre-Cycle and Off Cycle
+            adjusted_cycle = {
+                'name': f"{base_cycle['name']} (Repeat {repeat + 1})",
+                'duration': base_cycle['duration'],
+                'mfc_rates': adjusted_mfc_rates,
+            }
+            cycles.append(adjusted_cycle)
 
     current_cycle_index = 0
     cycle_start_time = start_time
@@ -335,6 +380,23 @@ start_button.pack(side="left", padx=5)
 
 stop_button = ttk.Button(data_frame, text="Stop", command=stop_recording, state='disabled')
 stop_button.pack(side="left", padx=5)
+
+# Repeats and Adjustments Section
+repeats_frame = ttk.LabelFrame(root, text="Cycle Repeats and MFC Adjustments")
+repeats_frame.pack(fill="x", padx=5, pady=5)
+
+# Number of Repeats
+repeats_label = ttk.Label(repeats_frame, text="Number of Repeats:")
+repeats_label.grid(row=0, column=0, padx=5, pady=2, sticky='e')
+repeats_entry = ttk.Entry(repeats_frame, textvariable=num_repeats_var, width=10)
+repeats_entry.grid(row=0, column=1, padx=5, pady=2, sticky='w')
+
+# MFC Adjustments
+for idx, mfc_name in enumerate(['MFC 1', 'MFC 2', 'MFC 3']):
+    adj_label = ttk.Label(repeats_frame, text=f"{mfc_name} Adjustment per Repeat (%):")
+    adj_label.grid(row=idx+1, column=0, padx=5, pady=2, sticky='e')
+    adj_entry = ttk.Entry(repeats_frame, textvariable=mfc_adjustments[mfc_name], width=10)
+    adj_entry.grid(row=idx+1, column=1, padx=5, pady=2, sticky='w')
 
 # Cycle Configuration Section
 cycle_frame = ttk.Frame(root)
