@@ -1,6 +1,6 @@
 ###########################
-# Author: Agosh Saini - with GPT-1o-preview
-# Date: 2024-10-12
+# Author: Agosh Saini with GPT
+# Date: 2024-10-02
 ###########################
 
 ########################### IMPORTS ###########################
@@ -15,6 +15,7 @@ import matplotlib
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import queue
+import itertools
 
 # Import the Keithley and MFC classes
 from ampmeter import Keithley2450
@@ -84,11 +85,13 @@ stop_time = None
 # Data lists for logging
 data_records = []
 data_queue = queue.Queue()  # Thread-safe queue for data communication
+cycle_plot_data = {}        # Data for plotting
+colors = itertools.cycle(['blue', 'green', 'red', 'cyan', 'magenta', 'yellow', 'black'])
 
 ########################### FUNCTIONS ###########################
 # Function to handle data recording from Keithley
 def record_data():
-    global recording, stop_time
+    global recording, stop_time, cycle_plot_data
     start_time = time.time()
 
     # Build cycles from user input
@@ -133,30 +136,52 @@ def record_data():
 
     # Build full cycle list with repeats and adjustments
     cycles = []
+
+    # Add Pre-Cycle once
+    pre_cycle = base_cycles[0]
+    cycles.append({
+        'name': pre_cycle['name'],
+        'duration': pre_cycle['duration'],
+        'mfc_rates': pre_cycle['mfc_rates'],
+    })
+
+    # Get the Run-On and Off cycles
+    on_cycle = base_cycles[1]
+    off_cycle = base_cycles[2]
+
     for repeat in range(num_repeats):
         adjustment_multiplier = repeat  # Adjustments increase each repeat
-        for base_cycle in base_cycles:
-            adjusted_mfc_rates = base_cycle['mfc_rates'].copy()
-            if base_cycle['name'] == 'Run-On Cycle':
-                # Apply adjustments only to Run-On Cycle
-                for mfc_name in ['MFC 1', 'MFC 2', 'MFC 3']:
-                    base_rate = base_cycle['mfc_rates'][mfc_name]
-                    adjustment = mfc_adjustment_values[mfc_name] * adjustment_multiplier
-                    adjusted_rate = base_rate + adjustment
-                    adjusted_mfc_rates[mfc_name] = adjusted_rate
-            # Else, keep the mfc_rates as they are for Pre-Cycle and Off Cycle
-            adjusted_cycle = {
-                'name': f"{base_cycle['name']} (Repeat {repeat + 1})",
-                'duration': base_cycle['duration'],
-                'mfc_rates': adjusted_mfc_rates,
-            }
-            cycles.append(adjusted_cycle)
+
+        # Adjusted Run-On Cycle
+        adjusted_mfc_rates = on_cycle['mfc_rates'].copy()
+        for mfc_name in ['MFC 1', 'MFC 2', 'MFC 3']:
+            base_rate = on_cycle['mfc_rates'][mfc_name]
+            adjustment = mfc_adjustment_values[mfc_name] * adjustment_multiplier
+            adjusted_rate = base_rate + adjustment
+            adjusted_mfc_rates[mfc_name] = adjusted_rate
+        adjusted_cycle = {
+            'name': f"{on_cycle['name']} (Repeat {repeat + 1})",
+            'duration': on_cycle['duration'],
+            'mfc_rates': adjusted_mfc_rates,
+        }
+        cycles.append(adjusted_cycle)
+
+        # Off Cycle (no adjustments)
+        cycles.append({
+            'name': f"{off_cycle['name']} (Repeat {repeat + 1})",
+            'duration': off_cycle['duration'],
+            'mfc_rates': off_cycle['mfc_rates'],
+        })
 
     current_cycle_index = 0
     cycle_start_time = start_time
     current_cycle = cycles[current_cycle_index]
     set_mfc_rates(current_cycle['mfc_rates'])  # Set initial MFC rates
 
+    # Initialize cycle plotting data
+    cycle_plot_data = {}
+    last_cycle_name = ''
+    cycle_color = next(colors)
     try:
         while recording:
             current_time = time.time()
@@ -178,8 +203,16 @@ def record_data():
                     cycle_start_time = current_time
                     set_mfc_rates(current_cycle['mfc_rates'])  # Set new MFC rates
 
+            # If the cycle has changed, get a new color
+            if current_cycle['name'] != last_cycle_name:
+                cycle_color = next(colors)
+                last_cycle_name = current_cycle['name']
+                # Initialize plotting data for the new cycle
+                if current_cycle['name'] not in cycle_plot_data:
+                    cycle_plot_data[current_cycle['name']] = {'times': [], 'currents': [], 'color': cycle_color}
+
             try:
-                # Measure current, voltage, and calculate resistance from the Keithley device
+                # Measure current from the Keithley device
                 current_measurement, voltage_measurement, resistance_measurement = keithley.measure_all()
 
                 # Get flow rates from MFCs sequentially
@@ -215,8 +248,10 @@ def record_data():
                 }
                 data_records.append(record)
                 # Put data into the queue for the UI thread
-                data_queue.put((elapsed_time, current_measurement))
-
+                data_queue.put({'elapsed_time': elapsed_time, 'current': current_measurement, 'cycle_name': current_cycle['name']})
+                # Add data to cycle_plot_data
+                cycle_plot_data[current_cycle['name']]['times'].append(elapsed_time)
+                cycle_plot_data[current_cycle['name']]['currents'].append(current_measurement)
             except Exception as e:
                 data_label.config(text=f"Error reading data: {e}")
             time.sleep(0.1)  # Data resolution of 0.1 seconds
@@ -228,8 +263,7 @@ def record_data():
         reset_mfcs()
         # After recording stops, save data to CSV
         save_data_to_csv()
-        # Close connections
-        close_connections()
+        # Do not close connections here to allow further experiments
 
 # Function to save data to a CSV file
 def save_data_to_csv():
@@ -252,19 +286,17 @@ def save_data_to_csv():
 
 # Function to start recording
 def start_recording():
-    global recording, data_records, line
+    global recording, data_records, cycle_plot_data, colors
     if not recording:
         recording = True
         data_records = []  # Clear previous data
-        times.clear()
-        currents.clear()
+        cycle_plot_data = {}  # Initialize cycle plot data
+        # Reset colors iterator
+        colors = itertools.cycle(['blue', 'green', 'red', 'cyan', 'magenta', 'yellow', 'black'])
         ax.clear()
         ax.set_xlabel('Elapsed Time (s)')
         ax.set_ylabel('Current (A)')
         ax.set_title('Real-Time Current Measurement')
-        # Recreate the line object after clearing the axes
-        line, = ax.plot(times, currents, color='blue')
-        canvas.draw()
         start_button.config(state='disabled')
         stop_button.config(state='normal')
         threading.Thread(target=record_data, daemon=True).start()
@@ -277,7 +309,7 @@ def stop_recording():
         recording = False
         start_button.config(state='normal')
         stop_button.config(state='disabled')
-        # The output will be turned off, MFCs reset, data saved, and connections closed in record_data()
+        # The output will be turned off, MFCs reset, and data saved in record_data()
 
 # Function to set MFC rates for a given cycle
 def set_mfc_rates(mfc_rates):
@@ -345,27 +377,55 @@ def update_mfc_com(mfc_name, com_var):
 
 # Function to update the plot in real-time
 def update_plot():
-    if not recording:
+    if not recording and data_queue.empty():
         return
     try:
-        while not data_queue.empty():
-            elapsed_time, current_measurement = data_queue.get_nowait()
-            times.append(elapsed_time)
-            currents.append(current_measurement)
-        line.set_data(times, currents)
-        ax.relim()
-        ax.autoscale_view()
+        # Clear axes
+        ax.clear()
+        ax.set_xlabel('Elapsed Time (s)')
+        ax.set_ylabel('Current (A)')
+        ax.set_title('Real-Time Current Measurement')
+        # Plot each cycle's data
+        for cycle_name, data in cycle_plot_data.items():
+            ax.plot(data['times'], data['currents'], color=data['color'], label=cycle_name)
+        ax.legend()
         canvas.draw()
     except Exception as e:
         print(f"Error updating plot: {e}")
-    root.after(100, update_plot)  # Schedule the function to run again after 100 ms
+    root.after(100, update_plot)
 
 # Function to close connections
 def close_connections():
-    keithley.instrument.write('OUTP OFF')  # Ensure output is off
-    keithley.close()
+    try:
+        keithley.instrument.write('OUTP OFF')  # Ensure output is off
+        keithley.close()
+    except:
+        pass
     for mfc in mfc_devices.values():
-        mfc.close()
+        try:
+            mfc.close()
+        except:
+            pass
+
+# Function to handle closing the application
+def on_closing():
+    global recording
+    if recording:
+        recording = False
+        time.sleep(0.2)  # Wait for recording thread to finish
+    # Turn off devices
+    try:
+        keithley.instrument.write('OUTP OFF')
+    except:
+        pass
+    reset_mfcs()
+    # Close connections
+    close_connections()
+    # Destroy the window
+    root.destroy()
+
+# Bind the on_closing function to the window close event
+root.protocol("WM_DELETE_WINDOW", on_closing)
 
 ########################### UI SETUP ###########################
 # Keithley Data Section
@@ -458,9 +518,6 @@ plot_frame = ttk.Frame(root)
 plot_frame.pack(fill="both", expand=True)
 
 fig, ax = plt.subplots(figsize=(8, 4))
-times = []
-currents = []
-line = None  # Initialize line as None
 ax.set_xlabel('Elapsed Time (s)')
 ax.set_ylabel('Current (A)')
 ax.set_title('Real-Time Current Measurement')
@@ -476,4 +533,4 @@ except KeyboardInterrupt:
     pass
 finally:
     # Ensure devices are closed when the application exits
-    close_connections()
+    on_closing()
