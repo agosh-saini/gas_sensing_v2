@@ -1,7 +1,13 @@
+###########################
+# Author: Agosh Saini - using using GPT-1o-preview model
+# Contact: contact@agoshsaini.com
+# Date: 2024-OCT-01
+###########################
+
+####################### IMPORTS #######################
 import pyvisa
 
-import pyvisa
-
+####################### CLASS DEFINITION #######################
 class Keithley2450:
     def __init__(self, resource_address: str):
         self.rm = pyvisa.ResourceManager()
@@ -37,7 +43,7 @@ class Keithley2450:
 
 
 
-# Initialize the instrument
+####################### MAIN #######################
 resource_address = 'USB0::0x05E6::0x2450::04502549::INSTR'
 keithley = Keithley2450(resource_address)
 
