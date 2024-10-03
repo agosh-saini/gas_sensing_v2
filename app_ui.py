@@ -1,5 +1,5 @@
 ###########################
-# Author: Agosh Saini with GPT
+# Author: Agosh Saini - with ChatGPT
 # Date: 2024-10-02
 ###########################
 
@@ -15,7 +15,6 @@ import matplotlib
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import queue
-import itertools
 
 # Import the Keithley and MFC classes
 from ampmeter import Keithley2450
@@ -33,23 +32,23 @@ root.geometry("1200x900")
 # Initialize cycle parameters
 cycle_vars = {
     'Pre-Cycle': {
-        'duration': tk.StringVar(value='0'),
+        'duration': tk.StringVar(value='10'),
         'mfc_rates': {
-            'MFC 1': tk.StringVar(value='0'),
-            'MFC 2': tk.StringVar(value='0'),
-            'MFC 3': tk.StringVar(value='0'),
+            'MFC 1': tk.StringVar(value='10'),
+            'MFC 2': tk.StringVar(value='20'),
+            'MFC 3': tk.StringVar(value='30'),
         },
     },
     'Run-On Cycle': {
-        'duration': tk.StringVar(value='0'),
+        'duration': tk.StringVar(value='20'),
         'mfc_rates': {
-            'MFC 1': tk.StringVar(value='0'),
-            'MFC 2': tk.StringVar(value='0'),
-            'MFC 3': tk.StringVar(value='0'),
+            'MFC 1': tk.StringVar(value='40'),
+            'MFC 2': tk.StringVar(value='50'),
+            'MFC 3': tk.StringVar(value='60'),
         },
     },
     'Off Cycle': {
-        'duration': tk.StringVar(value='0'),
+        'duration': tk.StringVar(value='10'),
         'mfc_rates': {
             'MFC 1': tk.StringVar(value='0'),
             'MFC 2': tk.StringVar(value='0'),
@@ -86,7 +85,6 @@ stop_time = None
 data_records = []
 data_queue = queue.Queue()  # Thread-safe queue for data communication
 cycle_plot_data = {}        # Data for plotting
-colors = itertools.cycle(['blue', 'green', 'red', 'cyan', 'magenta', 'yellow', 'black'])
 
 ########################### FUNCTIONS ###########################
 # Function to handle data recording from Keithley
@@ -180,8 +178,14 @@ def record_data():
 
     # Initialize cycle plotting data
     cycle_plot_data = {}
-    last_cycle_name = ''
-    cycle_color = next(colors)
+    last_cycle_type = ''
+    # Define colors for cycles
+    cycle_colors = {
+        'Pre-Cycle': 'blue',
+        'Run-On Cycle': 'red',
+        'Off Cycle': 'green'
+    }
+
     try:
         while recording:
             current_time = time.time()
@@ -203,13 +207,15 @@ def record_data():
                     cycle_start_time = current_time
                     set_mfc_rates(current_cycle['mfc_rates'])  # Set new MFC rates
 
-            # If the cycle has changed, get a new color
-            if current_cycle['name'] != last_cycle_name:
-                cycle_color = next(colors)
-                last_cycle_name = current_cycle['name']
-                # Initialize plotting data for the new cycle
-                if current_cycle['name'] not in cycle_plot_data:
-                    cycle_plot_data[current_cycle['name']] = {'times': [], 'currents': [], 'color': cycle_color}
+            # Determine cycle type without repeat number
+            cycle_type = current_cycle['name'].split(' (Repeat')[0]
+
+            # If the cycle has changed, initialize plotting data if necessary
+            if cycle_type != last_cycle_type:
+                last_cycle_type = cycle_type
+                # Initialize plotting data for the new cycle type
+                if cycle_type not in cycle_plot_data:
+                    cycle_plot_data[cycle_type] = {'times': [], 'values': [], 'color': cycle_colors.get(cycle_type, 'black')}
 
             try:
                 # Measure current from the Keithley device
@@ -248,10 +254,10 @@ def record_data():
                 }
                 data_records.append(record)
                 # Put data into the queue for the UI thread
-                data_queue.put({'elapsed_time': elapsed_time, 'current': current_measurement, 'cycle_name': current_cycle['name']})
+                data_queue.put({'elapsed_time': elapsed_time, 'resistance': resistance_measurement, 'cycle_type': cycle_type})
                 # Add data to cycle_plot_data
-                cycle_plot_data[current_cycle['name']]['times'].append(elapsed_time)
-                cycle_plot_data[current_cycle['name']]['currents'].append(current_measurement)
+                cycle_plot_data[cycle_type]['times'].append(elapsed_time)
+                cycle_plot_data[cycle_type]['values'].append(resistance_measurement)
             except Exception as e:
                 data_label.config(text=f"Error reading data: {e}")
             time.sleep(0.1)  # Data resolution of 0.1 seconds
@@ -286,17 +292,15 @@ def save_data_to_csv():
 
 # Function to start recording
 def start_recording():
-    global recording, data_records, cycle_plot_data, colors
+    global recording, data_records, cycle_plot_data
     if not recording:
         recording = True
         data_records = []  # Clear previous data
         cycle_plot_data = {}  # Initialize cycle plot data
-        # Reset colors iterator
-        colors = itertools.cycle(['blue', 'green', 'red', 'cyan', 'magenta', 'yellow', 'black'])
         ax.clear()
         ax.set_xlabel('Elapsed Time (s)')
-        ax.set_ylabel('Current (A)')
-        ax.set_title('Real-Time Current Measurement')
+        ax.set_ylabel('Resistance (Ohms)')
+        ax.set_title('Real-Time Resistance Measurement')
         start_button.config(state='disabled')
         stop_button.config(state='normal')
         threading.Thread(target=record_data, daemon=True).start()
@@ -383,11 +387,11 @@ def update_plot():
         # Clear axes
         ax.clear()
         ax.set_xlabel('Elapsed Time (s)')
-        ax.set_ylabel('Current (A)')
-        ax.set_title('Real-Time Current Measurement')
+        ax.set_ylabel('Resistance (Ohms)')
+        ax.set_title('Real-Time Resistance Measurement')
         # Plot each cycle's data
-        for cycle_name, data in cycle_plot_data.items():
-            ax.plot(data['times'], data['currents'], color=data['color'], label=cycle_name)
+        for cycle_type, data in cycle_plot_data.items():
+            ax.plot(data['times'], data['values'], color=data['color'], label=cycle_type)
         ax.legend()
         canvas.draw()
     except Exception as e:
@@ -432,7 +436,7 @@ root.protocol("WM_DELETE_WINDOW", on_closing)
 data_frame = ttk.Frame(root)
 data_frame.pack(pady=10)
 
-data_label = ttk.Label(data_frame, text="Current Data: N/A")
+data_label = ttk.Label(data_frame, text="Resistance Data: N/A")
 data_label.pack(side="left", padx=5)
 
 start_button = ttk.Button(data_frame, text="Start", command=start_recording)
@@ -519,8 +523,8 @@ plot_frame.pack(fill="both", expand=True)
 
 fig, ax = plt.subplots(figsize=(8, 4))
 ax.set_xlabel('Elapsed Time (s)')
-ax.set_ylabel('Current (A)')
-ax.set_title('Real-Time Current Measurement')
+ax.set_ylabel('Resistance (Ohms)')
+ax.set_title('Real-Time Resistance Measurement')
 
 canvas = FigureCanvasTkAgg(fig, master=plot_frame)
 canvas.draw()
