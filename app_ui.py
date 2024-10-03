@@ -391,7 +391,7 @@ def update_plot():
         ax.set_title('Real-Time Resistance Measurement')
         # Plot each cycle's data
         for cycle_type, data in cycle_plot_data.items():
-            ax.plot(data['times'], data['values'], color=data['color'], label=cycle_type)
+            ax.scatter(data['times'], data['values'], color=data['color'], label=cycle_type)
         ax.legend()
         canvas.draw()
     except Exception as e:
