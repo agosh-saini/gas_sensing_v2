@@ -1,5 +1,5 @@
 ###########################
-# Author: Agosh Saini - using GPT-10-preview model
+# Author: Agosh Saini - using GPT-1o-preview model
 # Contact: contact@agoshsaini.com
 # Date: 2024-OCT-17
 ###########################
