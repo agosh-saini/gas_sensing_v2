@@ -1,5 +1,5 @@
 ###########################
-# Author: Agosh Saini - using using GPT-1o-preview model
+# Author: Agosh Saini - using GPT-10-preview model
 # Contact: contact@agoshsaini.com
 # Date: 2024-OCT-17
 ###########################
@@ -26,6 +26,7 @@ class RelayController:
         self.timeout = timeout
         self.serial_conn = None
         self.last_message = ''
+        self.last_switch_time = 0.0  # Time taken to switch the relay
         self.cycle_thread = None  # Thread for continuous cycling
         self.stop_event = threading.Event()  # Event to signal the cycling thread to stop
         self.connect()
@@ -57,6 +58,9 @@ class RelayController:
             print("Invalid relay number. Must be an integer between 0 and 8.")
             return
 
+        # Record the time before sending the command
+        start_time = time.time()
+
         # Send the relay number followed by a newline character
         command = f"{relay_number}\n"
         self.serial_conn.write(command.encode('utf-8'))
@@ -64,6 +68,13 @@ class RelayController:
 
         # Read the response from Arduino
         self.read_messages()
+
+        # Record the time after receiving the response
+        end_time = time.time()
+
+        # Calculate the time taken to switch the relay
+        self.last_switch_time = end_time - start_time
+        print(f"Time taken to switch relay {relay_number}: {self.last_switch_time:.6f} seconds")
 
     def read_messages(self):
         """Read messages from the Arduino and save the one prefixed with 'SAVE_MESSAGE:'."""
@@ -87,6 +98,10 @@ class RelayController:
         """Return the last saved message."""
         return self.last_message
 
+    def get_last_switch_time(self):
+        """Return the time taken for the last relay switch."""
+        return self.last_switch_time
+
     def close(self):
         """Close the serial connection and stop any running cycles."""
         self.stop_cycle()  # Ensure cycling is stopped
@@ -100,7 +115,7 @@ class RelayController:
 
         Parameters:
         - delay: Time in seconds to wait between switching relays.
-        - message_handler: A callback function to handle the saved messages.
+        - message_handler: A callback function to handle the saved messages and timing information.
         """
         # Reset the stop event in case it was set previously
         self.stop_event.clear()
@@ -113,21 +128,26 @@ class RelayController:
                         break  # Exit inner loop if stop event is set
                     # Turn on the current relay
                     self.send_relay_command(relay)
+                    # Get the saved message and switching time
+                    message = self.get_last_message()
+                    switch_time = self.get_last_switch_time()
+                    print(f"Message to output to another function: {message}")
+                    print(f"Switching time for relay {relay}: {switch_time:.6f} seconds")
+
+                    # Pass the message and timing to the handler if provided
+                    if message_handler:
+                        message_handler(message, switch_time)
+
                     time.sleep(delay)  # Wait for the specified delay
 
-                    # Get the saved message
-                    message = self.get_last_message()
-                    print(f"Message to output to another function: {message}")
-
-                    # Pass the message to the handler if provided
-                    if message_handler:
-                        message_handler(message)
             # After stopping, turn off all relays
             self.send_relay_command(0)
             message = self.get_last_message()
+            switch_time = self.get_last_switch_time()
             print(f"Message to output to another function: {message}")
+            print(f"Switching time for relay 0: {switch_time:.6f} seconds")
             if message_handler:
-                message_handler(message)
+                message_handler(message, switch_time)
 
         # Start the cycling function in a new thread
         self.cycle_thread = threading.Thread(target=cycle_relays)
@@ -179,15 +199,21 @@ class RelayManager:
         else:
             print("Relay cycling is not running.")
 
-    def process_message(self, message):
+    def process_message(self, message, switch_time):
         """
-        Process the messages received from the RelayController.
+        Process the messages received from the RelayController along with timing information.
 
         Parameters:
         - message: The message string to process.
+        - switch_time: The time taken to switch the relay.
         """
         # Implement any processing logic needed
         print(f"Processed message in RelayManager: {message}")
+        print(f"Time taken for switch: {switch_time:.6f} seconds")
+
+        # Example: You can log the timing data, send it to another program, or perform calculations
+        # For demonstration, let's suppose we store it in a list
+        # self.switch_times.append((message, switch_time))
 
 ####################### MAIN #######################
 
@@ -200,7 +226,7 @@ if __name__ == "__main__":
 
     try:
         # Start the relay cycling process
-        relay_manager.start_relay_cycle(delay=0.1)
+        relay_manager.start_relay_cycle(delay=0.05)
 
         # Simulate other operations in the main thread
         print("Main thread is running other tasks.")
