@@ -36,7 +36,7 @@ cd <repository-directory>
 
   ```
 
-2. Upload the Arduino Uno Sketch file (.ino) to the Arduino device using the [Arduino IDE] (https://www.arduino.cc/en/software).
+2. Upload the Arduino Uno Sketch file (.ino) to the Arduino device using the [Arduino IDE](https://www.arduino.cc/en/software).
 
 3. Install the required Python packages using ```pip```
 
