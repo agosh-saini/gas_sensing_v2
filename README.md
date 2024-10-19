@@ -36,7 +36,9 @@ cd <repository-directory>
 
   ```
 
-2. nstall the required Python packages using ```pip```
+2. Upload the Arduino Uno Sketch file (.ino) to the Arduino device using the [Arduino IDE] (https://www.arduino.cc/en/software).
+
+3. Install the required Python packages using ```pip```
 
 ```bash
 
@@ -50,11 +52,11 @@ pip install -r requirements.txt
 
 ```bash
 
-python app_ui.py
+python main.py
 
 ``` 
 
-2.  **Ammeter Control**: To read data from the ammeter, you can run the following script:
+2.  **Ampmeter Control**: To read data from the ampmeter, you can run the following script:
 
 ```bash
 
@@ -69,8 +71,14 @@ python ampmeter.py
 python mfc.py
 ```
   
+4.  **Relay Control**: The relay can be controlled using the following script
 
-Make sure your MFC devices are properly connected to the COM port before running the scripts.
+```bash
+
+python relay_controller.py
+```
+
+Make sure your MFC devices and Arduino Uno are properly connected to the COM port before running the scripts.
 
   
 
@@ -82,7 +90,15 @@ Make sure your MFC devices are properly connected to the COM port before running
 
 - ```mfc.py```: A script designed to send control commands to the Brooks MFC via serial communication.
 
+- ```relay_controller.py```: A script to control relay switches connected to the system.
+
+- ```main.py```: The main entry point for the application, initializing the GUI and setting up necessary configurations.
+
 - ```requirements.txt```: Lists all Python dependencies required for the project.
+
+- ```Arduino_Uno_Sketch.ino```: This file contains the Arduino sketch code for interfacing with the Brooks MFC and other hardware components. It should be uploaded to the Arduino Uno to enable communication and control via the serial interface.
+
+- ```Relay_controller_Schematic.pdf```: The schematic to connect 2 4Relay Arduino Sheild and Arduino uno is provided in this file.
 
   
 
