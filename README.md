@@ -127,3 +127,5 @@ See ```requirements.txt``` for the complete list of dependencies.
 ## License
 
 This project is licensed under the ```Apache License 2.0```.. You may use, distribute, and modify this code under the terms of the license. Significant portions of the code were generated using ChatGPT-1o-preview model, however, the prompting, stucture, testing, and project management was done by ```agosh-saini```
+
+The Arduino system and associated circuits were created by [Neil Griffett](https://uwaterloo.ca/mechanical-mechatronics-engineering/contacts/neil-griffett) and [Bin Tan](https://uwaterloo.ca/mechanical-mechatronics-engineering/contacts/bin-tan), who are part of UWaterloo MME Techical Staff.
