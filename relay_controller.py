@@ -12,12 +12,12 @@ import threading
 
 ####################### CLASS DEFINITION #######################
 class RelayController:
-    def __init__(self, port='COM3', baudrate=9600, timeout=1):
+    def __init__(self, port='COM7', baudrate=9600, timeout=1):
         """
         Initialize the serial connection to the Arduino.
 
         Parameters:
-        - port: The serial port name (e.g., 'COM3' on Windows or '/dev/ttyACM0' on Linux).
+        - port: The serial port name (e.g., 'COM7' on Windows or '/dev/ttyACM0' on Linux).
         - baudrate: The baud rate matching the Arduino code (default is 9600).
         - timeout: Read timeout in seconds.
         """
