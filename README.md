@@ -122,6 +122,13 @@ This project uses several external libraries. Please install them via the ```req
 
 See ```requirements.txt``` for the complete list of dependencies.
 
+Furthermore, additional software is needed to communicate with Mass flow controllers and Keithley Sourcementer.
+
+- ```Brook's Smart DDE``` - Allows for communication with the Brooks SLA5800 Mass Flow Controller. [Click here](https://www.brooksinstrument.com/en/products/accessories-software/product-software/smart-dde) for the link to download the software.
+
+- ```Keithley IO Layer``` - Allows for communication and control of the Keithley 2400 Source Meter Unit. [Click here](https://www.tek.com/en/support/software/application/850c10) for the software download.
+
+- ```FTDI VCP Driver``` - Allows for communication with USB Hi-Speed to RS485 Serial Converter Assembly with 4 DB9 Ports, uses FT4232H. [Click here](https://ftdichip.com/drivers/vcp-drivers/) to download the driver.
   
 
 ## License
