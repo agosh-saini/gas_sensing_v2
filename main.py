@@ -1,5 +1,5 @@
 ###########################
-# Author: Agosh Saini - using GPT-1o-preview model
+# Author: Agosh Saini - using GPT-10-preview model
 # Contact: contact@agoshsaini.com
 # Date: 2024-10-02
 ###########################
@@ -14,7 +14,6 @@ import queue
 import tkinter as tk
 import logging
 import signal
-from contextlib import contextmanager
 
 # Import the instrument classes
 from ampmeter import Keithley2450
@@ -302,7 +301,7 @@ def record_data(ui_elements):
     try:
         # Build cycles from user input
         cycles, total_experiment_duration = build_cycles(ui_elements)
-        experiment_duration_var.set(f"Total Duration: {total_experiment_duration} s")
+        experiment_duration_var.set(f"Total Duration: {int(total_experiment_duration)} s")
         current_cycle_index = 0
         cycle_start_time = start_time
         current_cycle = cycles[current_cycle_index]
@@ -340,7 +339,16 @@ def record_data(ui_elements):
                     logging.info(f"Starting new cycle: {current_cycle['name']}")
 
             # Perform measurements
-            measure_and_record(elapsed_time, relay_controller, keithley, mfc_devices, data_records, data_queue, data_label)
+            measure_and_record(
+                elapsed_time,
+                relay_controller,
+                keithley,
+                mfc_devices,
+                data_records,
+                data_queue,
+                data_label,
+                ui_elements  # Pass ui_elements here
+            )
             time.sleep(0.1)  # Data resolution of 0.1 seconds
 
     except Exception as e:
@@ -373,6 +381,7 @@ def build_cycles(ui_elements):
     num_repeats_var = ui_elements['num_repeats_var']
     mfc_adjustments = ui_elements['mfc_adjustments']
     data_label = ui_elements['data_label']
+    mfc_devices = ui_elements['mfc_devices']  # Added this line
 
     # Initialize cycles
     base_cycles = []
@@ -421,7 +430,7 @@ def build_cycles(ui_elements):
     except ValueError:
         data_label.config(text="Invalid MFC adjustment values. Using default value of 0.")
         logging.error("Invalid MFC adjustment values. Using default value of 0.")
-        mfc_adjustment_values = {mfc_name: 0 for mfc_name in mfc_devices.keys()}
+        mfc_adjustment_values = {mfc_name: 0 for mfc_name in mfc_devices.keys()}  # mfc_devices is now defined
 
     # Build full cycle list with repeats and adjustments
     cycles = []
@@ -467,12 +476,22 @@ def build_cycles(ui_elements):
 
     return cycles, total_experiment_duration
 
-def measure_and_record(elapsed_time, relay_controller, keithley, mfc_devices, data_records, data_queue, data_label):
+def measure_and_record(
+    elapsed_time,
+    relay_controller,
+    keithley,
+    mfc_devices,
+    data_records,
+    data_queue,
+    data_label,
+    ui_elements  # Add ui_elements as a parameter
+):
     """
     Measures resistance for each relay, reads MFC flow rates, and records the data.
     """
     try:
         relay_resistances = {}
+        relay_delay = float(ui_elements['relay_delay_var'].get())
 
         # Measure resistance for each relay
         for relay_number in range(1, 9):  # Relays 1 to 8
@@ -482,13 +501,16 @@ def measure_and_record(elapsed_time, relay_controller, keithley, mfc_devices, da
             logging.info(f"Switched to Relay {relay_number}")
 
             # Wait for the relay to switch
-            time.sleep(float(ui_elements['relay_delay_var'].get()))
+            time.sleep(relay_delay)
 
             # Measure resistance and voltage using the Keithley device
             try:
                 with lock:
                     current_measurement, voltage_measurement, resistance_measurement = keithley.measure_all()
-                logging.info(f"Measured Relay {relay_number}: Current={current_measurement} A, Voltage={voltage_measurement} V, Resistance={resistance_measurement} Ohms")
+                logging.info(
+                    f"Measured Relay {relay_number}: Current={current_measurement} A, "
+                    f"Voltage={voltage_measurement} V, Resistance={resistance_measurement} Ohms"
+                )
                 # Store the resistance value
                 relay_resistances[f'Relay {relay_number} Resistance'] = resistance_measurement
             except Exception as e:
