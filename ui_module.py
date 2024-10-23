@@ -1,5 +1,5 @@
 ###########################
-# Author: Agosh Saini - using using GPT-1o-preview model
+# Author: Agosh Saini - using GPT-10-preview model
 # Contact: contact@agoshsaini.com
 # Date: 2024-10-02
 ###########################
@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import serial.tools.list_ports
 import queue
-import logging  # Added for logging
+import logging  
 
 # Use Agg backend for Matplotlib
 matplotlib.use("TkAgg")
@@ -29,6 +29,26 @@ def create_ui(
     set_mfc_flow_callback,
     close_connections_callback
 ):
+    """
+    Creates the user interface for the application.
+
+    Parameters:
+        root (tk.Tk): The main Tkinter window.
+        keithley: The Keithley device instance.
+        mfc_devices (dict): Dictionary of MFC devices.
+        relay_controller: The relay controller instance.
+        start_recording_callback (function): Function to call when starting recording.
+        stop_recording_callback (function): Function to call when stopping recording.
+        update_relay_com_callback (function): Function to update relay COM port.
+        update_mfc_com_callback (function): Function to update MFC COM ports.
+        reset_mfcs_callback (function): Function to reset MFCs.
+        set_mfc_rates_callback (function): Function to set MFC rates.
+        set_mfc_flow_callback (function): Function to set MFC flow.
+        close_connections_callback (function): Function to close device connections.
+
+    Returns:
+        dict: A dictionary containing UI elements and variables.
+    """
     # Initialize variables
     data_queue = queue.Queue()
     data_label = ttk.Label(root)
@@ -47,6 +67,11 @@ def create_ui(
     mfc_com_vars = {}
     relay_com_var = tk.StringVar(root)
     relay_status_label = ttk.Label(root)
+
+    # Variables for experiment status
+    experiment_duration_var = tk.StringVar(root, value='Total Duration: N/A')
+    remaining_time_var = tk.StringVar(root, value='Time Remaining: N/A')
+    current_cycle_var = tk.StringVar(root, value='Current Cycle: N/A')
 
     # Create a main frame
     main_frame = ttk.Frame(root)
@@ -97,6 +122,14 @@ def create_ui(
     stop_button = ttk.Button(data_frame, text="Stop", command=lambda: stop_recording_callback(ui_elements), state='disabled')
     stop_button.pack(side="left", padx=5)
 
+    # Add experiment status labels
+    status_frame = ttk.Frame(root)
+    status_frame.pack(pady=5)
+
+    ttk.Label(status_frame, textvariable=experiment_duration_var).pack(side="left", padx=5)
+    ttk.Label(status_frame, textvariable=remaining_time_var).pack(side="left", padx=5)
+    ttk.Label(status_frame, textvariable=current_cycle_var).pack(side="left", padx=5)
+
     # Now fill the ui_elements dictionary
     ui_elements.update({
         'data_label': data_label,
@@ -121,13 +154,23 @@ def create_ui(
         'relay_com_var': relay_com_var,
         'fig': fig,
         'ax': ax,
-        'root': root
+        'root': root,
+        'experiment_duration_var': experiment_duration_var,
+        'remaining_time_var': remaining_time_var,
+        'current_cycle_var': current_cycle_var
     })
 
     return ui_elements
 
 def create_repeats_and_adjustments_section(parent_frame, num_repeats_var, mfc_adjustments):
-    # Create the repeats and adjustments section in parent_frame
+    """
+    Creates the repeats and adjustments section in the UI.
+
+    Parameters:
+        parent_frame (ttk.Frame): The parent frame to place this section in.
+        num_repeats_var (tk.StringVar): Variable for the number of repeats.
+        mfc_adjustments (dict): Dictionary to store MFC adjustment variables.
+    """
     repeats_frame = ttk.LabelFrame(parent_frame, text="Cycle Repeats and MFC Adjustments")
     repeats_frame.pack(fill="both", expand=True, padx=5, pady=5)
     # Add widgets to repeats_frame
@@ -147,7 +190,18 @@ def create_repeats_and_adjustments_section(parent_frame, num_repeats_var, mfc_ad
         adj_entry.grid(row=idx+1, column=1, padx=5, pady=2, sticky='w')
 
 def create_mfc_control_section(parent_frame, mfc_devices, mfc_com_vars, flow_vars, status_labels, update_mfc_com_callback, set_mfc_flow_callback):
-    # Create the MFC control section in parent_frame
+    """
+    Creates the MFC control section in the UI.
+
+    Parameters:
+        parent_frame (ttk.Frame): The parent frame to place this section in.
+        mfc_devices (dict): Dictionary of MFC devices.
+        mfc_com_vars (dict): Dictionary to store MFC COM port variables.
+        flow_vars (dict): Dictionary to store flow rate variables.
+        status_labels (dict): Dictionary to store status labels for MFCs.
+        update_mfc_com_callback (function): Callback function to update MFC COM ports.
+        set_mfc_flow_callback (function): Callback function to set MFC flow rates.
+    """
     mfc_frame = ttk.LabelFrame(parent_frame, text="MFC Control")
     mfc_frame.pack(fill="both", expand=True, padx=5, pady=5)
 
@@ -186,7 +240,13 @@ def create_mfc_control_section(parent_frame, mfc_devices, mfc_com_vars, flow_var
         status_labels[mfc_name].pack(side="left", padx=5)
 
 def create_cycle_configuration_section(parent_frame, cycle_vars):
-    # Create the cycle configuration section in parent_frame
+    """
+    Creates the cycle configuration section in the UI.
+
+    Parameters:
+        parent_frame (ttk.Frame): The parent frame to place this section in.
+        cycle_vars (dict): Dictionary to store cycle configuration variables.
+    """
     cycle_frame = ttk.LabelFrame(parent_frame, text="Cycle Configuration")
     cycle_frame.pack(fill="both", expand=True, padx=5, pady=5)
 
@@ -215,7 +275,17 @@ def create_cycle_configuration_section(parent_frame, cycle_vars):
             mfc_entry.grid(row=idx+1, column=1, padx=5, pady=2, sticky='w')
 
 def create_relay_control_section(parent_frame, relay_com_var, relay_delay_var, relay_status_label, update_relay_com_callback, ui_elements):
-    # Create the relay control section in parent_frame
+    """
+    Creates the relay control section in the UI.
+
+    Parameters:
+        parent_frame (ttk.Frame): The parent frame to place this section in.
+        relay_com_var (tk.StringVar): Variable for the relay COM port.
+        relay_delay_var (tk.StringVar): Variable for the relay delay.
+        relay_status_label (ttk.Label): Label to display the relay status.
+        update_relay_com_callback (function): Callback function to update relay COM port.
+        ui_elements (dict): Dictionary of UI elements.
+    """
     relay_frame = ttk.LabelFrame(parent_frame, text="Relay Control")
     relay_frame.pack(fill="both", expand=True, padx=5, pady=5)
 
@@ -247,7 +317,15 @@ def create_relay_control_section(parent_frame, relay_com_var, relay_delay_var, r
     relay_status_label.pack(side="left", padx=5)
 
 def create_plot_section(parent_frame):
-    # Create the plot section in parent_frame
+    """
+    Creates the plot section in the UI.
+
+    Parameters:
+        parent_frame (ttk.Frame): The parent frame to place the plot in.
+
+    Returns:
+        tuple: A tuple containing the figure and axes objects.
+    """
     plot_frame = ttk.Frame(parent_frame)
     plot_frame.pack(fill="both", expand=True)
     fig, ax = plt.subplots(figsize=(8, 4))
