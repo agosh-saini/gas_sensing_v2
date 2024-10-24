@@ -1,6 +1,5 @@
 ###########################
-# Author: Agosh Saini - using GPT-10-preview model
-# Contact: contact@agoshsaini.com
+# Author: Agosh Saini
 # Date: 2024-10-02
 ###########################
 
@@ -12,7 +11,6 @@ import datetime
 import os
 import queue
 import tkinter as tk
-import logging
 import signal
 
 # Import the instrument classes
@@ -28,22 +26,6 @@ recording = False  # Recording state
 lock = threading.Lock()  # Thread lock for shared resources
 exit_event = threading.Event()  # Event for graceful shutdown
 
-########################### LOGGING CONFIGURATION ###########################
-# Create a logs directory if it doesn't exist
-if not os.path.exists('logs'):
-    os.makedirs('logs')
-
-# Configure logging to write to a file with timestamp
-log_filename = datetime.datetime.now().strftime('logs/log_%Y%m%d_%H%M%S.txt')
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s [%(levelname)s] %(message)s',
-    handlers=[
-        logging.FileHandler(log_filename),
-        logging.StreamHandler()
-    ]
-)
-
 ########################### MAIN APPLICATION ###########################
 def main():
     """
@@ -51,6 +33,8 @@ def main():
     It also sets up signal handlers for graceful shutdown.
     """
     global recording  # Declare global recording variable
+    global ui_elements  # Make ui_elements accessible in on_closing()
+    global root  # Make root accessible in on_closing()
 
     # Set up signal handlers for graceful shutdown
     signal.signal(signal.SIGINT, lambda sig, frame: exit_event.set())
@@ -66,9 +50,9 @@ def main():
     try:
         with lock:
             keithley = Keithley2450(resource_address)
-            logging.info("Keithley device initialized successfully.")
+            print("Keithley device initialized successfully.")
     except Exception as e:
-        logging.exception("Failed to initialize Keithley device")
+        print(f"Failed to initialize Keithley device: {e}")
         keithley = None  # Proceed without the device
 
     # Initialize MFC Devices (will be set in the UI)
@@ -98,6 +82,22 @@ def main():
         close_connections_callback=close_connections
     )
 
+    # Handle window close event
+    def on_closing():
+        """
+        Handles the event when the user closes the main window.
+        """
+        # Set the exit event
+        exit_event.set()
+        # Stop recording if it's running
+        if recording:
+            stop_recording(ui_elements)
+        # Destroy the root window
+        root.destroy()
+        print("Application closed by user.")
+
+    root.protocol("WM_DELETE_WINDOW", on_closing)
+
     # Start the Tkinter main loop
     try:
         root.mainloop()
@@ -106,7 +106,7 @@ def main():
     finally:
         # Ensure devices are closed when the application exits
         close_connections(ui_elements)
-        logging.info("Application closed.")
+        print("Application closed.")
 
 ########################### CALLBACK FUNCTIONS ###########################
 def start_recording(ui_elements):
@@ -119,7 +119,7 @@ def start_recording(ui_elements):
         data_records = []  # Clear previous data
         ui_elements['start_button'].config(state='disabled')
         ui_elements['stop_button'].config(state='normal')
-        logging.info("Recording started.")
+        print("Recording started.")
 
         # Start the recording thread
         threading.Thread(target=record_data, args=(ui_elements,), daemon=True).start()
@@ -135,7 +135,7 @@ def stop_recording(ui_elements):
         recording = False
         ui_elements['start_button'].config(state='normal')
         ui_elements['stop_button'].config(state='disabled')
-        logging.info("Recording stopped.")
+        print("Recording stopped.")
 
 def update_relay_com(com_var, ui_elements, relay_status_label):
     """
@@ -147,17 +147,17 @@ def update_relay_com(com_var, ui_elements, relay_status_label):
         if ui_elements['relay_controller']:
             with lock:
                 ui_elements['relay_controller'].close()
-            logging.info("Previous relay controller connection closed.")
+            print("Previous relay controller connection closed.")
 
         # Initialize a new RelayController
         with lock:
             relay_controller = RelayController(port=com_port)
         ui_elements['relay_controller'] = relay_controller
         relay_status_label.config(text=f"Connected to Arduino on port {com_port}")
-        logging.info(f"Connected to Arduino on port {com_port}")
+        print(f"Connected to Arduino on port {com_port}")
     except Exception as e:
         relay_status_label.config(text=f"Error connecting to Arduino: {e}")
-        logging.exception("Error connecting to Arduino")
+        print(f"Error connecting to Arduino: {e}")
 
 def update_mfc_com(mfc_name, com_var, status_labels, mfc_devices):
     """
@@ -169,16 +169,16 @@ def update_mfc_com(mfc_name, com_var, status_labels, mfc_devices):
         if mfc_devices[mfc_name]:
             with lock:
                 mfc_devices[mfc_name].close()
-            logging.info(f"Previous connection for {mfc_name} closed.")
+            print(f"Previous connection for {mfc_name} closed.")
 
         # Re-initialize the MFCDevice with the new COM port
         with lock:
             mfc_devices[mfc_name] = MFCDevice(com_port)
         status_labels[mfc_name].config(text=f"Using COM Port: {com_port}")
-        logging.info(f"{mfc_name} connected on {com_port}.")
+        print(f"{mfc_name} connected on {com_port}.")
     except Exception as e:
         status_labels[mfc_name].config(text=f"Error: {e}")
-        logging.exception(f"Error connecting {mfc_name} on {com_port}")
+        print(f"Error connecting {mfc_name} on {com_port}: {e}")
         mfc_devices[mfc_name] = None  # Ensure the device is set to None on failure
 
 def reset_mfcs(mfc_devices, status_labels):
@@ -191,10 +191,10 @@ def reset_mfcs(mfc_devices, status_labels):
                 with lock:
                     mfc.write_setpoint(0, units=57)  # Set flow rate to 0%
                 status_labels[mfc_name].config(text=f"Flow Rate Set to: 0%")
-                logging.info(f"{mfc_name} flow rate reset to 0%.")
+                print(f"{mfc_name} flow rate reset to 0%.")
         except Exception as e:
             status_labels[mfc_name].config(text=f"Error resetting {mfc_name}: {e}")
-            logging.exception(f"Error resetting {mfc_name}")
+            print(f"Error resetting {mfc_name}: {e}")
 
 def set_mfc_rates(mfc_rates, flow_vars, mfc_devices, status_labels):
     """
@@ -213,16 +213,16 @@ def set_mfc_flow(mfc_name, flow_var, mfc_devices, status_labels):
         mfc = mfc_devices[mfc_name]
         if not mfc:
             status_labels[mfc_name].config(text=f"{mfc_name} not connected.")
-            logging.warning(f"{mfc_name} not connected.")
+            print(f"{mfc_name} not connected.")
             return
         flow_rate = float(flow_var.get())
         with lock:
             mfc.write_setpoint(flow_rate, units=57)
         status_labels[mfc_name].config(text=f"Flow Rate Set to: {flow_rate}%")
-        logging.info(f"{mfc_name} flow rate set to {flow_rate}%.")
+        print(f"{mfc_name} flow rate set to {flow_rate}%.")
     except Exception as e:
         status_labels[mfc_name].config(text=f"Error: {e}")
-        logging.exception(f"Error setting flow rate for {mfc_name}")
+        print(f"Error setting flow rate for {mfc_name}: {e}")
 
 def close_connections(ui_elements):
     """
@@ -237,24 +237,24 @@ def close_connections(ui_elements):
             with lock:
                 keithley.instrument.write('OUTP OFF')
                 keithley.close()
-            logging.info("Keithley device closed.")
+            print("Keithley device closed.")
     except Exception as e:
-        logging.exception("Error closing Keithley device")
+        print(f"Error closing Keithley device: {e}")
     for mfc in mfc_devices.values():
         try:
             if mfc:
                 with lock:
                     mfc.close()
-                logging.info(f"MFC device {mfc} closed.")
+                print(f"MFC device {mfc} closed.")
         except Exception as e:
-            logging.exception(f"Error closing MFC device {mfc}")
+            print(f"Error closing MFC device {mfc}: {e}")
     try:
         if relay_controller:
             with lock:
                 relay_controller.close()
-            logging.info("Relay controller connection closed.")
+            print("Relay controller connection closed.")
     except Exception as e:
-        logging.exception("Error closing relay controller")
+        print(f"Error closing relay controller: {e}")
 
 ########################### DATA RECORDING FUNCTION ###########################
 def record_data(ui_elements):
@@ -290,12 +290,12 @@ def record_data(ui_elements):
 
     if not relay_controller:
         data_label.config(text="Relay controller not connected.")
-        logging.error("Relay controller not connected.")
+        print("Relay controller not connected.")
         return
 
     if not keithley:
         data_label.config(text="Keithley device not connected.")
-        logging.error("Keithley device not connected.")
+        print("Keithley device not connected.")
         return
 
     try:
@@ -328,7 +328,7 @@ def record_data(ui_elements):
                     recording = False
                     start_button.config(state='normal')
                     stop_button.config(state='disabled')
-                    logging.info("All cycles completed.")
+                    print("All cycles completed.")
                     break
                 else:
                     # Move to the next cycle
@@ -336,7 +336,7 @@ def record_data(ui_elements):
                     cycle_start_time = current_time
                     set_mfc_rates(current_cycle['mfc_rates'], flow_vars, mfc_devices, status_labels)  # Set new MFC rates
                     current_cycle_var.set(f"Current Cycle: {current_cycle['name']}")
-                    logging.info(f"Starting new cycle: {current_cycle['name']}")
+                    print(f"Starting new cycle: {current_cycle['name']}")
 
             # Perform measurements
             measure_and_record(
@@ -352,13 +352,13 @@ def record_data(ui_elements):
             time.sleep(0.1)  # Data resolution of 0.1 seconds
 
     except Exception as e:
-        logging.exception("Unexpected error during data recording")
+        print(f"Unexpected error during data recording: {e}")
     finally:
         # Turn off the Keithley output after measurements are done
         if keithley:
             with lock:
                 keithley.instrument.write('OUTP OFF')
-            logging.info("Keithley output turned off.")
+            print("Keithley output turned off.")
 
         # Set MFC flow rates to 0
         reset_mfcs(mfc_devices, status_labels)
@@ -367,11 +367,11 @@ def record_data(ui_elements):
         if relay_controller:
             with lock:
                 relay_controller.send_relay_command(0)
-            logging.info("All relays turned off.")
+            print("All relays turned off.")
 
         # After recording stops, save data to CSV
         save_data_to_csv(data_records, data_label)
-        logging.info("Data recording completed.")
+        print("Data recording completed.")
 
 def build_cycles(ui_elements):
     """
@@ -390,20 +390,20 @@ def build_cycles(ui_elements):
         duration_str = cycle_vars[cycle_name]['duration'].get()
         try:
             duration = float(duration_str)
-            logging.info(f"{cycle_name} duration: {duration} seconds")
+            print(f"{cycle_name} duration: {duration} seconds")
         except ValueError:
             data_label.config(text=f"Invalid duration for {cycle_name}. Using default value of 0.")
-            logging.error(f"Invalid duration for {cycle_name}. Using default value of 0.")
+            print(f"Invalid duration for {cycle_name}. Using default value of 0.")
             duration = 0
         mfc_rates = {}
         for mfc_name in ['MFC 1', 'MFC 2', 'MFC 3']:
             rate_str = cycle_vars[cycle_name]['mfc_rates'][mfc_name].get()
             try:
                 rate = float(rate_str)
-                logging.info(f"{cycle_name} - {mfc_name} flow rate: {rate}%")
+                print(f"{cycle_name} - {mfc_name} flow rate: {rate}%")
             except ValueError:
                 data_label.config(text=f"Invalid rate for {mfc_name} in {cycle_name}. Using default value of 0.")
-                logging.error(f"Invalid rate for {mfc_name} in {cycle_name}. Using default value of 0.")
+                print(f"Invalid rate for {mfc_name} in {cycle_name}. Using default value of 0.")
                 rate = 0
             mfc_rates[mfc_name] = rate
         base_cycles.append({
@@ -417,20 +417,20 @@ def build_cycles(ui_elements):
         num_repeats = int(num_repeats_var.get())
         if num_repeats < 1:
             raise ValueError
-        logging.info(f"Number of repeats: {num_repeats}")
+        print(f"Number of repeats: {num_repeats}")
     except ValueError:
         data_label.config(text=f"Invalid number of repeats. Using default value of 1.")
-        logging.error(f"Invalid number of repeats. Using default value of 1.")
+        print(f"Invalid number of repeats. Using default value of 1.")
         num_repeats = 1
 
     # Get MFC adjustment values
     try:
         mfc_adjustment_values = {mfc_name: float(adj_var.get()) for mfc_name, adj_var in mfc_adjustments.items()}
-        logging.info(f"MFC adjustment values per repeat: {mfc_adjustment_values}")
+        print(f"MFC adjustment values per repeat: {mfc_adjustment_values}")
     except ValueError:
         data_label.config(text="Invalid MFC adjustment values. Using default value of 0.")
-        logging.error("Invalid MFC adjustment values. Using default value of 0.")
-        mfc_adjustment_values = {mfc_name: 0 for mfc_name in mfc_devices.keys()}  # mfc_devices is now defined
+        print("Invalid MFC adjustment values. Using default value of 0.")
+        mfc_adjustment_values = {mfc_name: 0 for mfc_name in mfc_devices.keys()}
 
     # Build full cycle list with repeats and adjustments
     cycles = []
@@ -493,12 +493,20 @@ def measure_and_record(
         relay_resistances = {}
         relay_delay = float(ui_elements['relay_delay_var'].get())
 
+        # Check if exit_event is set before starting measurements
+        if exit_event.is_set():
+            return
+
         # Measure resistance for each relay
         for relay_number in range(1, 9):  # Relays 1 to 8
+            # Check if exit_event is set to exit early
+            if exit_event.is_set():
+                return
+
             # Switch to the relay
             with lock:
                 relay_controller.send_relay_command(relay_number)
-            logging.info(f"Switched to Relay {relay_number}")
+            print(f"Switched to Relay {relay_number}")
 
             # Wait for the relay to switch
             time.sleep(relay_delay)
@@ -507,7 +515,7 @@ def measure_and_record(
             try:
                 with lock:
                     current_measurement, voltage_measurement, resistance_measurement = keithley.measure_all()
-                logging.info(
+                print(
                     f"Measured Relay {relay_number}: Current={current_measurement} A, "
                     f"Voltage={voltage_measurement} V, Resistance={resistance_measurement} Ohms"
                 )
@@ -515,13 +523,13 @@ def measure_and_record(
                 relay_resistances[f'Relay {relay_number} Resistance'] = resistance_measurement
             except Exception as e:
                 data_label.config(text=f"Error measuring resistance on Relay {relay_number}: {e}")
-                logging.exception(f"Error measuring resistance on Relay {relay_number}")
+                print(f"Error measuring resistance on Relay {relay_number}: {e}")
                 relay_resistances[f'Relay {relay_number} Resistance'] = None
 
         # Turn off all relays
         with lock:
             relay_controller.send_relay_command(0)
-        logging.info("Turned off all relays")
+        print("Turned off all relays")
 
         # Get flow rates from MFCs sequentially
         flow_rates = {}
@@ -535,14 +543,14 @@ def measure_and_record(
                     with lock:
                         percent_sp, setpoint_value, units = mfc.read_setpoint()
                     flow_rates[mfc_name] = setpoint_value
-                    logging.info(f"{mfc_name} flow rate read as {setpoint_value}%")
+                    print(f"{mfc_name} flow rate read as {setpoint_value}%")
                     break  # Exit the retry loop if successful
                 except Exception as e:
                     if attempt < 2:
                         time.sleep(0.5)
                     else:
                         data_label.config(text=f"Failed to read from {mfc_name}: {e}")
-                        logging.exception(f"Failed to read from {mfc_name}")
+                        print(f"Failed to read from {mfc_name}: {e}")
                         flow_rates[mfc_name] = 'N/A'
             # Wait before moving to the next MFC
             time.sleep(0.05)
@@ -563,14 +571,14 @@ def measure_and_record(
         # Add relay resistances to the record
         record.update(relay_resistances)
         data_records.append(record)
-        logging.info(f"Data recorded at {timestamp}")
+        print(f"Data recorded at {timestamp}")
 
         # Put data into the queue for the UI thread
         data_queue.put({'elapsed_time': elapsed_time, 'relay_resistances': relay_resistances})
 
     except Exception as e:
         data_label.config(text=f"Error reading data: {e}")
-        logging.exception("Error reading data")
+        print(f"Error reading data: {e}")
 
 ########################### DATA SAVING FUNCTION ###########################
 def save_data_to_csv(data_records, data_label):
@@ -596,10 +604,10 @@ def save_data_to_csv(data_records, data_label):
             for record in data_records:
                 writer.writerow(record)
         data_label.config(text=f"Data saved to {filename}")
-        logging.info(f"Data saved to {filename}")
+        print(f"Data saved to {filename}")
     except Exception as e:
         data_label.config(text=f"Error saving data: {e}")
-        logging.exception("Error saving data")
+        print(f"Error saving data: {e}")
 
 ########################### PLOT UPDATING FUNCTION ###########################
 def update_plot(ui_elements):
@@ -638,7 +646,7 @@ def update_plot(ui_elements):
         ax.legend()
         fig.canvas.draw()
     except Exception as e:
-        logging.exception("Error updating plot")
+        print(f"Error updating plot: {e}")
     finally:
         if not exit_event.is_set():
             root.after(1000, lambda: update_plot(ui_elements))
