@@ -18,6 +18,9 @@ from ampmeter import Keithley2450
 from mfc import MFCDevice
 from relay_controller import RelayController
 
+# Import environment variables
+from env import env
+
 # Import the UI module
 import ui_module
 
@@ -46,7 +49,7 @@ def main():
     root.state('zoomed')  # Maximize the window
 
     # Initialize the Keithley Ammeter
-    resource_address = 'USB0::0x05E6::0x2450::04502549::INSTR'
+    resource_address = env.KEITHLEY
     try:
         with lock:
             keithley = Keithley2450(resource_address)
@@ -288,6 +291,19 @@ def record_data(ui_elements):
     remaining_time_var = ui_elements['remaining_time_var']
     current_cycle_var = ui_elements['current_cycle_var']
 
+    # Retrieve selected relays
+    selected_relays = [
+        relay_num for relay_num, var in ui_elements['relay_vars'].items() if var.get()
+    ]
+
+    if not selected_relays:
+        data_label.config(text="No relays selected. Please select at least one relay.")
+        print("No relays selected. Please select at least one relay.")
+        recording = False
+        start_button.config(state='normal')
+        stop_button.config(state='disabled')
+        return
+
     if not relay_controller:
         data_label.config(text="Relay controller not connected.")
         print("Relay controller not connected.")
@@ -309,9 +325,9 @@ def record_data(ui_elements):
         current_cycle_var.set(f"Current Cycle: {current_cycle['name']}")
 
         # Initialize relay_plot_data
-        for relay_num in range(1, 9):
-            relay_plot_data[relay_num]['times'] = []
-            relay_plot_data[relay_num]['values'] = []
+        for relay_num in selected_relays:
+            ui_elements['relay_plot_data'][relay_num]['times'] = []
+            ui_elements['relay_plot_data'][relay_num]['values'] = []
 
         while recording and not exit_event.is_set():
             current_time = time.time()
@@ -370,7 +386,7 @@ def record_data(ui_elements):
             print("All relays turned off.")
 
         # After recording stops, save data to CSV
-        save_data_to_csv(data_records, data_label)
+        save_data_to_csv(data_records, data_label, ui_elements)
         print("Data recording completed.")
 
 def build_cycles(ui_elements):
@@ -484,21 +500,26 @@ def measure_and_record(
     data_records,
     data_queue,
     data_label,
-    ui_elements  # Add ui_elements as a parameter
+    ui_elements
 ):
     """
-    Measures resistance for each relay, reads MFC flow rates, and records the data.
+    Measures resistance for each selected relay, reads MFC flow rates, and records the data.
     """
     try:
         relay_resistances = {}
         relay_delay = float(ui_elements['relay_delay_var'].get())
 
+        # Retrieve selected relays from UI
+        selected_relays = [
+            relay_num for relay_num, var in ui_elements['relay_vars'].items() if var.get()
+        ]
+
         # Check if exit_event is set before starting measurements
         if exit_event.is_set():
             return
 
-        # Measure resistance for each relay
-        for relay_number in range(1, 9):  # Relays 1 to 8
+        # Measure resistance for each selected relay
+        for relay_number in selected_relays:
             # Check if exit_event is set to exit early
             if exit_event.is_set():
                 return
@@ -581,10 +602,15 @@ def measure_and_record(
         print(f"Error reading data: {e}")
 
 ########################### DATA SAVING FUNCTION ###########################
-def save_data_to_csv(data_records, data_label):
+def save_data_to_csv(data_records, data_label, ui_elements):
     """
     Saves the recorded data to a CSV file with a timestamped filename.
     """
+    # Retrieve selected relays
+    selected_relays = [
+        relay_num for relay_num, var in ui_elements['relay_vars'].items() if var.get()
+    ]
+
     # Create a directory for data logs if it doesn't exist
     if not os.path.exists('data_logs'):
         os.makedirs('data_logs')
@@ -592,8 +618,8 @@ def save_data_to_csv(data_records, data_label):
     filename = datetime.datetime.now().strftime('data_logs/data_log_%Y%m%d_%H%M%S.csv')
     # Prepare fieldnames
     fieldnames = ['Time', 'Elapsed Time (s)', 'Voltage (V)']
-    # Add relay resistance columns
-    for relay_number in range(1, 9):
+    # Add relay resistance columns for selected relays
+    for relay_number in selected_relays:
         fieldnames.append(f'Relay {relay_number} Resistance')
     # Add MFC flow rate columns
     fieldnames.extend(['MFC A Flow Rate', 'MFC B Flow Rate', 'MFC C Flow Rate', 'Cycle'])
@@ -612,7 +638,7 @@ def save_data_to_csv(data_records, data_label):
 ########################### PLOT UPDATING FUNCTION ###########################
 def update_plot(ui_elements):
     """
-    Updates the matplotlib plot with the latest resistance measurements from all relays.
+    Updates the matplotlib plot with the latest resistance measurements from selected relays.
     """
     data_queue = ui_elements['data_queue']
     relay_plot_data = ui_elements['relay_plot_data']
@@ -626,8 +652,8 @@ def update_plot(ui_elements):
             elapsed_time = data['elapsed_time']
             relay_resistances = data['relay_resistances']
             # Update relay_plot_data
-            for relay_num in range(1, 9):
-                resistance = relay_resistances.get(f'Relay {relay_num} Resistance', None)
+            for key, resistance in relay_resistances.items():
+                relay_num = int(key.split()[1])  # Extract relay number
                 if resistance is not None and isinstance(resistance, (int, float)):
                     relay_plot_data[relay_num]['times'].append(elapsed_time)
                     relay_plot_data[relay_num]['values'].append(resistance)
@@ -635,14 +661,18 @@ def update_plot(ui_elements):
         ax.clear()
         ax.set_xlabel('Elapsed Time (s)')
         ax.set_ylabel('Resistance (Ohms)')
-        ax.set_title('Real-Time Resistance Measurement (All Relays)')
-        # Plot each relay's data
+        ax.set_title('Real-Time Resistance Measurement (Selected Relays)')
+        # Retrieve selected relays
+        selected_relays = [
+            relay_num for relay_num, var in ui_elements['relay_vars'].items() if var.get()
+        ]
+        # Plot each selected relay's data
         colors = ['red', 'blue', 'green', 'orange', 'purple', 'brown', 'pink', 'gray']
-        for relay_num in range(1, 9):
+        for idx, relay_num in enumerate(selected_relays):
             times = relay_plot_data[relay_num]['times']
             values = relay_plot_data[relay_num]['values']
             if times and values:
-                ax.plot(times, values, label=f'Relay {relay_num}', color=colors[relay_num - 1])
+                ax.plot(times, values, label=f'Relay {relay_num}', color=colors[(relay_num - 1) % len(colors)])
         ax.legend()
         fig.canvas.draw()
     except Exception as e:

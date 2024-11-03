@@ -44,17 +44,20 @@ class Keithley2450:
 
 
 ####################### MAIN #######################
-resource_address = 'USB0::0x05E6::0x2450::04502549::INSTR'
-keithley = Keithley2450(resource_address)
 
-try:
-    # Measure current, voltage, and calculate resistance at 1V
-    current, voltage, resistance = keithley.measure_all()
-    print(f"Measured Current: {current} A")
-    print(f"Measured Voltage: {voltage} V")
-    print(f"Calculated Resistance: {resistance} Ohms")
-except Exception as e:
-    print(f"An error occurred: {e}")
-finally:
-    # Close the connection when done
-    keithley.close()
+if __name__ == '__main__':
+    # Connect to the Keithley 2450
+    resource_address = 'USB0::0x05E6::0x2450::04502549::INSTR'
+    keithley = Keithley2450(resource_address)
+
+    try:
+        # Measure current, voltage, and calculate resistance at 1V
+        current, voltage, resistance = keithley.measure_all()
+        print(f"Measured Current: {current} A")
+        print(f"Measured Voltage: {voltage} V")
+        print(f"Calculated Resistance: {resistance} Ohms")
+    except Exception as e:
+        print(f"An error occurred: {e}")
+    finally:
+        # Close the connection when done
+        keithley.close()
