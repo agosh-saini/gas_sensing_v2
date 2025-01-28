@@ -1,0 +1,6 @@
+Traceback (most recent call last):
+  File "C:\Users\westw\Documents\School\Gas Sensing Project\gas_sensing_v2\main.py", line 17, in <module>
+    from ampmeter import Keithley2450
+  File "C:\Users\westw\Documents\School\Gas Sensing Project\gas_sensing_v2\ampmeter.py", line 8, in <module>
+    import pyvisa
+ModuleNotFoundError: No module named 'pyvisa'

@@ -72,7 +72,7 @@ def main():
     data_records = []
     data_queue = queue.Queue()  # Thread-safe queue for data communication
 
-    # Initialize the UI and get UI elements
+    # Initialize the UI and get UI elements 
     ui_elements = ui_module.create_ui(
         root, keithley, mfc_devices, relay_controller,
         start_recording_callback=start_recording,
